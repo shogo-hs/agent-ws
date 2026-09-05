@@ -107,6 +107,8 @@ class WsFlowTest(unittest.TestCase):
         out = self.ws("hook", "session-start", stdin="{}").stdout
         self.assertIn(task.name, out)
         self.assertIn("顧客に見積の前提を確認する", out)
+        # Codex は JSON の additionalContext しか文脈に足さない（素のテキストだと落ちる）
+        self.assertIn("additionalContext", json.loads(out)["hookSpecificOutput"])
 
     def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
         import time

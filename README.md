@@ -20,7 +20,8 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 3. 実行権限が落ちていたら `chmod +x scripts/ws` を実行します。
 4. リポジトリの**ルートで** `claude` または `codex` を起動します。
    - Claude Code: 初回にフォルダを信頼するか聞かれます。信頼すると `.claude/settings.json` の hooks が有効になります。
-   - Codex CLI: `/hooks` を開き、`.codex/hooks.json` の 2 つの hook を確認して trust します。
+   - Codex CLI（0.153 以上）: 初回にフォルダを信頼するか聞かれます。信頼したあと `/hooks` を開き、`.codex/hooks.json` の 4 つの hook を確認して trust します。
+     信頼していない hook は警告なしに飛ばされるので、起動時に `[agent-ws] 現在のタスク` の案内が出なければ `/hooks` を見直してください。
 
 `projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
 
@@ -106,6 +107,7 @@ agent-ws/
 `scripts/ws hook pre-tool-use` が、ツールの入力（読むパス・grep の対象・シェルのコマンド）に「現在のタスク以外の `projects/*/tasks/*/`」が含まれていたら拒否し、理由として `knowledges/` を案内します。
 `tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。
 Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` から同じスクリプトを呼びます。
+起動時の案内（SessionStart）は JSON の `additionalContext` で返します。Claude Code は素のテキストでも文脈に足しますが、Codex CLI は JSON でないと文脈に載りません（0.153.4 で確認）。
 
 「`mkdir` ではなく `scripts/ws task new` を使う」は規約とスキルで指示しているだけで、hook では止めていません。エージェントが手でフォルダを作ってしまう事故が実際に起きたら、`projects/*/tasks/` 配下への直接の `mkdir` を hook で止める形に足せます。
 
@@ -131,7 +133,7 @@ agent-ws は Stop hook で応答が終わった時刻を記録し、次に人が
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
 - `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同時に複数のタスクを別セッションで進めたい場合は、clone を分けてください。
 - Windows では `.claude/skills` の symlink を作るのに開発者モードか管理者権限が要ります。`python3` が `py -3` の環境では `.claude/settings.json` と `.codex/hooks.json` のコマンドを書き換えてください。
-- Codex CLI のプロジェクト hooks は、初回に `/hooks` で trust しないと動きません。
+- Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。
 
 ## 開発
 

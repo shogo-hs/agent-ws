@@ -496,6 +496,13 @@ def cmd_hook_user_prompt_submit(args):
     sys.exit(2)
 
 
+def _emit_context(text: str) -> None:
+    """起動時の案内をモデルの文脈に足す。Claude Code は素のテキストでも JSON でも拾うが、
+    Codex は JSON の additionalContext しか拾わない（0.153.4 で実測）ので JSON で出す。"""
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                             "additionalContext": text}}, ensure_ascii=False))
+
+
 def cmd_hook_session_start(args):
     data = _stdin_json()
     sid, source = data.get("session_id"), data.get("source", "")
@@ -512,11 +519,11 @@ def cmd_hook_session_start(args):
                 f.unlink(missing_ok=True)
     t = current_task()
     if not t:
-        print("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
+        _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
               "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。")
         return
     meta, body = read_frontmatter(t / "index.md")
-    print(f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
+    _emit_context(f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
           f"まず {rel(t)}/index.md を読む。他の tasks/ 配下は読まない（hook が拒否する）。"
           f"ナレッジは projects/{project_of(t)}/knowledges/index.md から必要なものだけ開く。\n"
           f"次の一手（index.md より）: {_section(body, '次の一手')}")
