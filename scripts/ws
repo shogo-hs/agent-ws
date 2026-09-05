@@ -36,6 +36,8 @@ REF_KINDS = ("web", "file", "transcript", "chat", "person")
 CACHE_TTL_MIN = int(os.environ.get("WS_CACHE_TTL_MIN", "60"))
 REPROMPT_GRACE_MIN = 10  # 止めたあと、この分数以内の再送は通す
 SESSIONS = ROOT / ".ws" / "sessions"
+LESSONS = ROOT / "LESSONS.md"  # 人からの指摘。1 行 1 件。hook が起動のたびに全行を差し込む
+LESSONS_MAX = 20  # これを超えたら doctor が「減らせ」と報告する（長いほど守られない）
 
 
 # ---- 小道具 ---------------------------------------------------------------
@@ -402,12 +404,64 @@ def cmd_know_new(args):
     print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く")
 
 
+# ---- 教訓（人からの指摘） ---------------------------------------------------
+
+LESSONS_HEAD = ("# LESSONS — 人からの指摘\n"
+                "（1 指摘 1 行「- 〜のとき、〜する（理由）」。`scripts/ws lesson add` で足す。"
+                f"{LESSONS_MAX} 行を超えたら統合するか AGENTS.md・doctor の検査へ昇格して減らす）\n\n")
+
+
+def lesson_lines() -> list[str]:
+    if not LESSONS.exists():
+        return []
+    return [l for l in LESSONS.read_text(encoding="utf-8").splitlines() if l.startswith("- ")]
+
+
+def _append_to_section(path: Path, name: str, line: str) -> bool:
+    """index.md の「## name」節の末尾に line を足す。雛形の括弧書きは消す。既にあれば False。"""
+    text = path.read_text(encoding="utf-8")
+    m = re.search(rf"^##\s+{re.escape(name)}\s*\n(.*?)(?=^##\s|\Z)", text, re.S | re.M)
+    if not m:
+        die(f"{rel(path)} に「{name}」の節が無い")
+    kept = [l for l in m.group(1).splitlines() if l.strip() and not (l.startswith("（") and l.endswith("）"))]
+    if line in kept:
+        return False
+    body = "\n".join(kept + [line]) + "\n\n"
+    path.write_text(text[:m.start(1)] + body + text[m.end(1):], encoding="utf-8")
+    return True
+
+
+def cmd_lesson_add(args):
+    line = "- " + " ".join(args.text.split())
+    if args.project:
+        idx = project_dir(args.project) / "index.md"
+        if not _append_to_section(idx, "この案件での決まりごと", line):
+            print(f"既にある: {rel(idx)}")
+            return
+        print(f"追加: {rel(idx)} の「この案件での決まりごと」")
+        return
+    if line in lesson_lines():
+        print("既にある: LESSONS.md")
+        return
+    if not LESSONS.exists():
+        LESSONS.write_text(LESSONS_HEAD, encoding="utf-8")
+    with LESSONS.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    n = len(lesson_lines())
+    print(f"追加: LESSONS.md（{n} 行）")
+    if n > LESSONS_MAX:
+        print(f"{LESSONS_MAX} 行を超えた。統合するか AGENTS.md・doctor の検査へ昇格して減らす")
+
+
 # ---- 点検 ------------------------------------------------------------------
 
 def cmd_doctor(args):
     problems: list[str] = []
     if not PROJECTS.is_dir():
         die("projects/ が無い")
+    if len(lesson_lines()) > LESSONS_MAX:
+        problems.append(f"LESSONS.md が {len(lesson_lines())} 行（上限 {LESSONS_MAX}）。"
+                        "統合するか AGENTS.md・doctor の検査へ昇格して減らす")
     for proj in sorted(p for p in PROJECTS.iterdir() if p.is_dir()):
         for req in ("index.md", "knowledges/index.md", "tasks/index.md"):
             if not (proj / req).exists():
@@ -517,10 +571,12 @@ def cmd_hook_session_start(args):
         for f in SESSIONS.iterdir():
             if f.stat().st_mtime < cutoff:
                 f.unlink(missing_ok=True)
+    lessons = lesson_lines()
+    tail = "\n人からの指摘（LESSONS.md。守る）:\n" + ("\n".join(lessons) if lessons else "（無し）")
     t = current_task()
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
-              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。")
+              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。" + tail)
         return
     meta, body = read_frontmatter(t / "index.md")
     proj = project_of(t)
@@ -532,7 +588,7 @@ def cmd_hook_session_start(args):
           f"まず {rel(t)}/index.md を読む。他の tasks/ 配下は読まない（hook が拒否する）。"
           f"ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。\n"
           f"この案件での決まりごと（projects/{proj}/index.md より）: {rules}\n"
-          f"次の一手（index.md より）: {_section(body, '次の一手')}")
+          f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
 
 
 def cmd_hook_pre_tool_use(args):
@@ -621,6 +677,12 @@ def main(argv=None):
     q = sub.add_parser("index", help="index.md の自動生成部分（<!-- ws:index -->）を更新する")
     q.add_argument("dir", nargs="?", help="省略時は projects/ 以下すべて")
     q.set_defaults(fn=cmd_index)
+
+    le = sub.add_parser("lesson", help="人からの指摘（教訓）").add_subparsers(dest="sub", required=True)
+    q = le.add_parser("add", help="LESSONS.md に 1 行足す（--project なら案件の決まりごとへ）")
+    q.add_argument("text", help="「〜のとき、〜する（理由）」の 1 行")
+    q.add_argument("--project", help="案件固有の指摘はその案件の index.md の決まりごとへ")
+    q.set_defaults(fn=cmd_lesson_add)
 
     sub.add_parser("doctor", help="index.md や frontmatter の欠落を報告する").set_defaults(fn=cmd_doctor)
 

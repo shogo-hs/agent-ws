@@ -119,6 +119,28 @@ class WsFlowTest(unittest.TestCase):
         # Codex は JSON の additionalContext しか文脈に足さない（素のテキストだと落ちる）
         self.assertIn("additionalContext", json.loads(out)["hookSpecificOutput"])
 
+    def test_lessons_are_kept_and_injected(self):
+        self.ws("project", "new", "acme")
+        text = "報告は結論を先に書く（読む人はチャットしか見ない）"
+        self.assertIn("追加", self.ws("lesson", "add", text).stdout)
+        self.assertIn("既にある", self.ws("lesson", "add", text).stdout)
+        self.assertEqual((self.root / "LESSONS.md").read_text(encoding="utf-8").count(text), 1)
+        # 案件固有の指摘は案件の決まりごとへ。雛形の括弧書きは消える
+        self.ws("lesson", "add", "週次定例の文字起こしは当日のタスクに置く", "--project", "acme")
+        pidx = (self.root / "projects/acme/index.md").read_text(encoding="utf-8")
+        self.assertIn("- 週次定例の文字起こしは当日のタスクに置く", pidx)
+        self.assertNotIn("（成果物の置き場所", pidx)
+        # タスク未設定でも、設定後でも hook が差し込む
+        self.assertIn(text, self.ws("hook", "session-start", stdin="{}").stdout)
+        self.ws("task", "new", "acme", "t1")
+        out = self.ws("hook", "session-start", stdin="{}").stdout
+        self.assertIn(text, out)
+        self.assertIn("週次定例の文字起こしは当日のタスクに置く", out)
+        # 20 行を超えたら doctor が減らせと報告する
+        for i in range(20):
+            self.ws("lesson", "add", f"教訓 {i}")
+        self.assertIn("LESSONS.md が 21 行", self.ws("doctor", check=False).stdout)
+
     def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
         import time
         sid = "sess-1"

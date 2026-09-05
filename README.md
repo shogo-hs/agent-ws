@@ -39,6 +39,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` で用語集に足す |
+| 「結論を先に書いて」「その言い方はやめて」 | `scripts/ws lesson add "報告は結論を先に書く（読む人はチャットしか見ない）"` で `LESSONS.md` に 1 行残す。案件固有なら `--project acme` で案件の決まりごとへ |
 | 「このタスクは終わり」 | `scripts/ws task done`。状態を done にし、「現在のタスク」を外す |
 
 質問に答えるだけ・数分で終わる作業にはタスクを切る必要はありません。ファイルを作る、調べた情報を残す、日をまたぐ、のどれかに当てはまるときにタスクにします。
@@ -68,6 +69,7 @@ scripts/ws doctor            # index.md や frontmatter の欠落を報告する
 agent-ws/
 ├── AGENTS.md              エージェント向けの作業規約（Codex CLI が読む正本）
 ├── CLAUDE.md              「@AGENTS.md」の1行（Claude Code はこれ経由で同じ規約を読む）
+├── LESSONS.md             人からの指摘（1 行 1 件。hook が起動のたびに全行を差し込む）
 ├── .claude/settings.json  Claude Code の hooks 登録
 ├── .claude/skills -> ../.agents/skills
 ├── .codex/hooks.json      Codex CLI の hooks 登録（中身は同じスクリプトを呼ぶ）
@@ -98,7 +100,7 @@ agent-ws/
 ### エージェントが読む順番
 
 1. `AGENTS.md`（60 行以内の規約。起動時に自動で読まれる）
-2. hook が差し込む「現在のタスク」、案件の `index.md` の「この案件での決まりごと」、タスクの `index.md` の「次の一手」
+2. hook が差し込む「現在のタスク」、案件の `index.md` の「この案件での決まりごと」、タスクの `index.md` の「次の一手」、`LESSONS.md` の全行
 3. タスクの `index.md`（目的・進め方・現在地・情報源の一覧）
 4. 案件の `knowledges/index.md`。必要なナレッジと用語集だけを開く
 
@@ -127,6 +129,14 @@ agent-ws は Stop hook で応答が終わった時刻を記録し、次に人が
 `knowledges/glossary.md` は Markdown の表（正式表記 / 読み / 誤変換・別表記 / 説明）です。
 人が GitHub や Obsidian でそのまま読め、`scripts/ws transcript normalize` も同じ表を読みます。
 置換は表に書いた文字列と一致した箇所だけで、読みが近い語を推測して置き換えることはしません。1〜2 文字の語や一般語は誤爆するので書かないでください。
+
+### 人からの指摘
+
+「結論を先に」「その言い方はやめて」のような指摘は `scripts/ws lesson add "〜のとき、〜する（理由）"` で `LESSONS.md` に 1 行残し、hook が起動のたびに全行を差し込みます。
+1 回目で残します（2 回目を待つ規則は、1 回目を覚えている者がセッションをまたいで居ないので機能しません）。
+20 行を超えると `scripts/ws doctor` が報告するので、統合するか AGENTS.md・doctor の検査へ昇格して減らしてください。長いほど守られなくなります。
+案件固有の指摘は `--project <案件>` で案件の `index.md` の「この案件での決まりごと」に入ります。
+指摘かどうかを機械で見分ける hook は付けていません。指摘らしい語で当てても大半が説明や質問で、外れの多い注意は無視されるようになるからです。
 
 ## 制約と注意
 
