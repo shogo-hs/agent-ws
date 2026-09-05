@@ -523,9 +523,15 @@ def cmd_hook_session_start(args):
               "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。")
         return
     meta, body = read_frontmatter(t / "index.md")
+    proj = project_of(t)
+    # 案件の index.md の「この案件での決まりごと」は書く場所だけあって読む導線が無かったので、ここで差し込む。
+    # ponytail: 600 字で切る。超える案件が実際に出たら knowledges/ へ移す案内を doctor に足す
+    pidx = PROJECTS / str(proj) / "index.md"
+    rules = _section(read_frontmatter(pidx)[1] if pidx.exists() else "", "この案件での決まりごと", 600)
     _emit_context(f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
           f"まず {rel(t)}/index.md を読む。他の tasks/ 配下は読まない（hook が拒否する）。"
-          f"ナレッジは projects/{project_of(t)}/knowledges/index.md から必要なものだけ開く。\n"
+          f"ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。\n"
+          f"この案件での決まりごと（projects/{proj}/index.md より）: {rules}\n"
           f"次の一手（index.md より）: {_section(body, '次の一手')}")
 
 

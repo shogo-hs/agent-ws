@@ -104,9 +104,18 @@ class WsFlowTest(unittest.TestCase):
         idx.write_text(idx.read_text(encoding="utf-8").replace(
             "（次のセッションが最初にやること。hook が起動時にここを読み上げる）", "顧客に見積の前提を確認する"),
             encoding="utf-8")
+        pidx = self.root / "projects/acme/index.md"
+        pidx.write_text(pidx.read_text(encoding="utf-8").replace(
+            "（成果物の置き場所、使う言語、連絡手段など。長くなるなら knowledges/ に移す）",
+            "成果物は共有ドライブの ACME フォルダに置く"), encoding="utf-8")
         out = self.ws("hook", "session-start", stdin="{}").stdout
         self.assertIn(task.name, out)
         self.assertIn("顧客に見積の前提を確認する", out)
+        # 案件の決まりごとは index.md に書く場所だけあって読まれなかったので、hook が差し込む
+        self.assertIn("成果物は共有ドライブの ACME フォルダに置く", out)
+        pidx.unlink()
+        self.assertIn("決まりごと（projects/acme/index.md より）: （未記入）",
+                      self.ws("hook", "session-start", stdin="{}").stdout)
         # Codex は JSON の additionalContext しか文脈に足さない（素のテキストだと落ちる）
         self.assertIn("additionalContext", json.loads(out)["hookSpecificOutput"])
 
