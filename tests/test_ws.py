@@ -82,6 +82,7 @@ class WsFlowTest(unittest.TestCase):
         self.assertIn("KubernetesのKubernetes移行はPoCで進める", norm)
         self.assertIn("クバネティス → Kubernetes: 1", out)
         self.assertIn("ポック → PoC: 1", out)
+        self.assertIn("文字・", out)  # 長さを出して、長い文字起こしを分けて読ませる判断材料にする
 
         # ナレッジの昇格、点検、完了
         self.ws("know", "new", "acme", "移行方針")
@@ -106,6 +107,38 @@ class WsFlowTest(unittest.TestCase):
         out = self.ws("hook", "session-start", stdin="{}").stdout
         self.assertIn(task.name, out)
         self.assertIn("顧客に見積の前提を確認する", out)
+
+    def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
+        import time
+        sid = "sess-1"
+        def ev(name, **kw):
+            return json.dumps({"session_id": sid, "hook_event_name": name, **kw})
+        self.ws("hook", "session-start", stdin=ev("SessionStart", source="startup"))
+        self.ws("hook", "stop", stdin=ev("Stop"))
+        # 直後の送信は通る
+        r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="続き"), check=False)
+        self.assertEqual(r.returncode, 0)
+        # 前回の応答を 61 分前に偽装 → 止まる。本文は保存される
+        rec = self.root / ".ws/sessions" / f"{sid}.last_stop"
+        rec.write_text(str(int(time.time()) - 61 * 60), encoding="utf-8")
+        r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="続きをやって"), check=False)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("/clear", r.stderr)
+        self.assertEqual((self.root / ".ws/sessions" / f"{sid}.blocked_prompt").read_text(encoding="utf-8"), "続きをやって")
+        # 10 分以内の再送は通す
+        r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="続きをやって"), check=False)
+        self.assertEqual(r.returncode, 0)
+        # /clear（source=clear）で記録が消え、以後は通る
+        rec.write_text(str(int(time.time()) - 61 * 60), encoding="utf-8")
+        self.ws("hook", "session-start", stdin=ev("SessionStart", source="clear"))
+        r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="x"), check=False)
+        self.assertEqual(r.returncode, 0)
+        # compact 直後はタイマーが今からになる
+        self.ws("hook", "stop", stdin=ev("Stop"))
+        rec.write_text(str(int(time.time()) - 61 * 60), encoding="utf-8")
+        self.ws("hook", "session-start", stdin=ev("SessionStart", source="compact"))
+        r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="x"), check=False)
+        self.assertEqual(r.returncode, 0)
 
     def test_hook_is_fail_open_on_garbage(self):
         r = self.ws("hook", "pre-tool-use", stdin="not json")

@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
@@ -28,7 +29,13 @@ IDX_END = "<!-- /ws:index -->"
 # projects/<案件>/tasks/<タスク> をツール入力のどこからでも拾う
 TASK_RE = re.compile(r"projects/([^/\s\"'`<>]+)/tasks/([^/\s\"'`<>]+)")
 MAX_BODY = 200_000
+LONG_TEXT = 10_000  # これを超える文字起こしは範囲を分けて読ませる
 REF_KINDS = ("web", "file", "transcript", "chat", "person")
+# 前回の応答からこの分数以上空いていたら、次の 1 通を止めて /clear を勧める
+# （Claude サブスクリプションのプロンプトキャッシュ TTL は 60 分。API 直叩きは 5 分）
+CACHE_TTL_MIN = int(os.environ.get("WS_CACHE_TTL_MIN", "60"))
+REPROMPT_GRACE_MIN = 10  # 止めたあと、この分数以内の再送は通す
+SESSIONS = ROOT / ".ws" / "sessions"
 
 
 # ---- 小道具 ---------------------------------------------------------------
@@ -360,7 +367,11 @@ def cmd_transcript_normalize(args):
             counts[(alias, term)] = n
     out = f.with_name(f.stem + ".normalized.md")
     write(out, text)
-    print(f"出力: {rel(out) if out.resolve().is_relative_to(ROOT) else out}")
+    shown = rel(out) if out.resolve().is_relative_to(ROOT) else str(out)
+    print(f"出力: {shown}（{len(text):,} 文字・{text.count(chr(10)) + 1:,} 行）")
+    if len(text) > LONG_TEXT:
+        print(f"  {LONG_TEXT:,} 文字を超えている。丸ごと読まず、時刻や見出しの区切りで範囲を分けて読む"
+              f"（例: sed -n '1,200p' {shown}）")
     if not counts:
         print("  置換なし（用語集に一致する誤変換が無い。用語集: "
               f"projects/{name}/knowledges/glossary.md）")
@@ -439,8 +450,66 @@ def _section(body: str, name: str, limit: int = 300) -> str:
     return text[:limit] if text else "（未記入）"
 
 
+def _sess(sid: str, kind: str) -> Path:
+    return SESSIONS / f"{sid}.{kind}"
+
+
+def _mark_stop(sid: str):
+    SESSIONS.mkdir(parents=True, exist_ok=True)
+    _sess(sid, "last_stop").write_text(str(int(time.time())), encoding="utf-8")
+
+
+def cmd_hook_stop(args):
+    """応答が終わった時刻を記録する。キャッシュのタイマーはここから数える。"""
+    sid = _stdin_json().get("session_id")
+    if sid:
+        _mark_stop(sid)
+
+
+def cmd_hook_user_prompt_submit(args):
+    """前回の応答から CACHE_TTL_MIN 以上空いていたら、この 1 通を送らずに止める。
+
+    止めると会話全文の再処理（キャッシュ切れ）が起きない。人は /clear して index.md から
+    再開するか、同じ内容をもう一度送る（REPROMPT_GRACE_MIN 以内なら通す）。
+    """
+    data = _stdin_json()
+    sid = data.get("session_id")
+    if not sid or not _sess(sid, "last_stop").exists():
+        return
+    gap_min = (time.time() - int(_sess(sid, "last_stop").read_text().strip() or 0)) / 60
+    if gap_min < CACHE_TTL_MIN:
+        return
+    warned = _sess(sid, "warned")
+    if warned.exists() and time.time() - warned.stat().st_mtime < REPROMPT_GRACE_MIN * 60:
+        warned.unlink()  # 人が承知の上で送り直した
+        return
+    warned.write_text(str(int(time.time())), encoding="utf-8")
+    saved = _sess(sid, "blocked_prompt")
+    saved.write_text(data.get("prompt") or data.get("user_input") or "", encoding="utf-8")
+    cur = current_task()
+    where = f"現在のタスクは {rel(cur)}（index.md に現在地と次の一手）" if cur else "現在のタスクは未設定"
+    print(f"[agent-ws] 前回の応答から {gap_min:.0f} 分空いています。プロンプトキャッシュ（{CACHE_TTL_MIN} 分）は"
+          "切れているので、この会話に続きを送ると会話全文を定価で再処理します。\n"
+          f"安く済ませるなら /clear して index.md から再開してください。{where}。\n"
+          f"それでも続けるなら、同じ内容を {REPROMPT_GRACE_MIN} 分以内にもう一度送れば通します"
+          f"（本文は {rel(saved)} に保存しました）。", file=sys.stderr)
+    sys.exit(2)
+
+
 def cmd_hook_session_start(args):
-    _stdin_json()
+    data = _stdin_json()
+    sid, source = data.get("session_id"), data.get("source", "")
+    if sid:
+        SESSIONS.mkdir(parents=True, exist_ok=True)
+        if source in ("startup", "clear"):
+            for kind in ("last_stop", "warned", "blocked_prompt"):
+                _sess(sid, kind).unlink(missing_ok=True)
+        elif source == "compact":
+            _mark_stop(sid)  # 要約のリクエストが今飛んだので、タイマーはここから
+        cutoff = time.time() - 7 * 86400
+        for f in SESSIONS.iterdir():
+            if f.stat().st_mtime < cutoff:
+                f.unlink(missing_ok=True)
     t = current_task()
     if not t:
         print("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
@@ -545,6 +614,8 @@ def main(argv=None):
     h = sub.add_parser("hook", help="エージェントの hooks から呼ばれる（stdin に JSON）").add_subparsers(dest="sub", required=True)
     h.add_parser("session-start").set_defaults(fn=cmd_hook_session_start)
     h.add_parser("pre-tool-use").set_defaults(fn=cmd_hook_pre_tool_use)
+    h.add_parser("user-prompt-submit").set_defaults(fn=cmd_hook_user_prompt_submit)
+    h.add_parser("stop").set_defaults(fn=cmd_hook_stop)
 
     args = ap.parse_args(argv)
     if args.cmd == "hook":
