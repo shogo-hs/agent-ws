@@ -1,0 +1,560 @@
+#!/usr/bin/env python3
+"""ws — agent-ws の CLI。python3 の標準ライブラリだけで動く。
+
+  scripts/ws --help            サブコマンド一覧
+  scripts/ws task new A slug   タスクを作って現在のタスクにする
+  scripts/ws hook ...          Claude Code / Codex CLI の hooks から呼ばれる
+
+テストや別の場所からの利用では環境変数 WS_ROOT でリポジトリのルートを差し替えられる。
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import sys
+import urllib.request
+from html.parser import HTMLParser
+from pathlib import Path
+
+ROOT = Path(os.environ.get("WS_ROOT") or Path(__file__).resolve().parent.parent).resolve()
+PROJECTS = ROOT / "projects"
+TEMPLATES = ROOT / "templates"
+CURRENT = ROOT / ".ws" / "current"
+IDX_BEGIN = "<!-- ws:index -->"
+IDX_END = "<!-- /ws:index -->"
+# projects/<案件>/tasks/<タスク> をツール入力のどこからでも拾う
+TASK_RE = re.compile(r"projects/([^/\s\"'`<>]+)/tasks/([^/\s\"'`<>]+)")
+MAX_BODY = 200_000
+REF_KINDS = ("web", "file", "transcript", "chat", "person")
+
+
+# ---- 小道具 ---------------------------------------------------------------
+
+def now() -> dt.datetime:
+    return dt.datetime.now().astimezone()
+
+
+def today() -> str:
+    return now().strftime("%Y-%m-%d")
+
+
+def die(msg: str, code: int = 1):
+    print(f"ws: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def rel(p: Path) -> str:
+    return p.resolve().relative_to(ROOT).as_posix()
+
+
+def render(template: Path, **kw) -> str:
+    text = template.read_text(encoding="utf-8")
+    for k, v in kw.items():
+        text = text.replace("{{" + k + "}}", str(v))
+    return text
+
+
+def write(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def slugify(s: str) -> str:
+    s = re.sub(r"[\s/\\:*?\"<>|#]+", "_", s.strip())
+    return s.strip("_") or "untitled"
+
+
+def project_of(p: Path) -> str | None:
+    parts = Path(rel(p)).parts
+    return parts[1] if len(parts) >= 2 and parts[0] == "projects" else None
+
+
+def project_dir(name: str) -> Path:
+    p = PROJECTS / name
+    if not p.is_dir():
+        die(f"案件 {name} が無い。scripts/ws project new {name} で作る")
+    return p
+
+
+# ---- frontmatter（1階層の key: value だけ読む） ----------------------------
+
+FM_RE = re.compile(r"^---\n(.*?)\n---\n?", re.S)
+
+
+def read_frontmatter(path: Path) -> tuple[dict, str]:
+    text = path.read_text(encoding="utf-8")
+    m = FM_RE.match(text)
+    if not m:
+        return {}, text
+    meta = {}
+    for line in m.group(1).splitlines():
+        if ":" in line and not line.startswith((" ", "\t", "#")):
+            k, v = line.split(":", 1)
+            meta[k.strip()] = v.strip().strip('"')
+    return meta, text[m.end():]
+
+
+def set_frontmatter(path: Path, **updates):
+    text = path.read_text(encoding="utf-8")
+    m = FM_RE.match(text)
+    if not m:
+        die(f"{rel(path)} に frontmatter が無い")
+    lines = m.group(1).splitlines()
+    for k, v in updates.items():
+        for i, line in enumerate(lines):
+            if line.split(":", 1)[0].strip() == k:
+                lines[i] = f"{k}: {v}"
+                break
+        else:
+            lines.append(f"{k}: {v}")
+    write(path, "---\n" + "\n".join(lines) + "\n---\n" + text[m.end():])
+
+
+# ---- index.md の自動生成部 -------------------------------------------------
+
+def entry_line(md: Path, base: Path) -> str:
+    meta, _ = read_frontmatter(md)
+    r = md.relative_to(base).as_posix()
+    label = r[: -len("index.md")] if r.endswith("/index.md") else r
+    status = f" [{meta['status']}]" if meta.get("status") else ""
+    title = meta.get("title", "")
+    summary = meta.get("summary") or title
+    return f"- [{label}]({r}){status}" + (f" — {summary}" if summary else "")
+
+
+def index_entries(d: Path) -> list[str]:
+    lines = []
+    for p in sorted(d.iterdir()):
+        if p.name.startswith("."):
+            continue
+        if p.is_file() and p.suffix == ".md" and p.name != "index.md":
+            lines.append(entry_line(p, d))
+        elif p.is_dir() and p.name == "references":
+            # タスクの index.md からは情報源を1段展開して直接見せる（読む回数を1回減らす）
+            lines += [entry_line(q, d) for q in sorted(p.glob("*.md")) if q.name != "index.md"]
+        elif p.is_dir() and (p / "index.md").exists():
+            lines.append(entry_line(p / "index.md", d))
+    return lines
+
+
+def update_index(d: Path) -> bool:
+    idx = d / "index.md"
+    if not idx.exists():
+        return False
+    text = idx.read_text(encoding="utf-8")
+    if IDX_BEGIN not in text or IDX_END not in text:
+        return False
+    body = "\n".join(index_entries(d)) or "（まだ何もない）"
+    pat = re.compile(re.escape(IDX_BEGIN) + r".*?" + re.escape(IDX_END), re.S)
+    new = pat.sub(lambda _: f"{IDX_BEGIN}\n{body}\n{IDX_END}", text)
+    if new != text:
+        write(idx, new)
+    return True
+
+
+def cmd_index(args):
+    if args.dir:
+        targets = [Path(args.dir).resolve()]
+    else:
+        targets = [p.parent for p in PROJECTS.rglob("index.md")]
+    n = sum(update_index(d) for d in targets)
+    print(f"index.md を {n} 件更新した")
+
+
+# ---- 案件・タスク ----------------------------------------------------------
+
+def current_task() -> Path | None:
+    if not CURRENT.exists():
+        return None
+    p = ROOT / CURRENT.read_text(encoding="utf-8").strip()
+    return p if (p / "index.md").exists() else None
+
+
+def set_current(task_dir: Path):
+    CURRENT.parent.mkdir(exist_ok=True)
+    CURRENT.write_text(rel(task_dir) + "\n", encoding="utf-8")
+
+
+def cmd_project_new(args):
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_-]*", args.name):
+        die("案件名は英数字・ハイフン・アンダースコアだけ（パスに使うため）")
+    p = PROJECTS / args.name
+    if p.exists():
+        die(f"{rel(p)} は既にある")
+    src = TEMPLATES / "project"
+    for tpl in src.rglob("*.md"):
+        write(p / tpl.relative_to(src), render(tpl, project=args.name, date=today()))
+    update_index(PROJECTS)
+    print(f"作成: {rel(p)}\n次: {rel(p / 'index.md')} の「概要」を書く")
+
+
+def cmd_task_new(args):
+    proj = project_dir(args.project)
+    d = proj / "tasks" / f"{now():%Y%m%d}_{slugify(args.slug)}"
+    if d.exists():
+        die(f"{rel(d)} は既にある。続けるなら scripts/ws task use {rel(d)}")
+    title = args.title or args.slug
+    write(d / "index.md", render(TEMPLATES / "task" / "index.md",
+                                 title=title, project=args.project, date=today()))
+    write(d / "references" / "index.md",
+          render(TEMPLATES / "task" / "references" / "index.md", title=title))
+    set_current(d)
+    update_index(proj / "tasks")
+    print(f"作成: {rel(d)}\n現在のタスクに設定した\n次: {rel(d / 'index.md')} の「目的」を書く")
+
+
+def cmd_task_use(args):
+    d = Path(args.path) if Path(args.path).is_absolute() else ROOT / args.path
+    if not (d / "index.md").exists():
+        die(f"{args.path} にタスクの index.md が無い")
+    set_current(d)
+    print(f"現在のタスク: {rel(d)}")
+
+
+def cmd_task_current(args):
+    t = current_task()
+    if not t:
+        print("現在のタスクは未設定（scripts/ws task new <project> <slug> か task use <path>）")
+        sys.exit(1)
+    meta, _ = read_frontmatter(t / "index.md")
+    print(f"{rel(t)} [{meta.get('status', '?')}] {meta.get('title', '')}")
+
+
+def cmd_task_done(args):
+    t = current_task()
+    if not t:
+        die("現在のタスクが無い")
+    set_frontmatter(t / "index.md", status="done", updated=today())
+    CURRENT.unlink()
+    update_index(t.parent)
+    print(f"完了: {rel(t)}（現在のタスクを解除した）")
+
+
+# ---- 情報源 ----------------------------------------------------------------
+
+class _TextExtractor(HTMLParser):
+    """HTML から本文テキストだけを抜く。script/style/nav は捨てる。"""
+    SKIP = {"script", "style", "noscript", "svg", "head", "nav", "footer"}
+    BLOCK = {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr",
+             "section", "article", "pre", "blockquote", "table"}
+
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+        self.skip = 0
+        self.title = ""
+        self._in_title = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.SKIP:
+            self.skip += 1
+        if tag == "title":
+            self._in_title = True
+        if tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP and self.skip:
+            self.skip -= 1
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+        elif not self.skip:
+            self.parts.append(data)
+
+    def text(self) -> str:
+        t = re.sub(r"[ \t　]+", " ", "".join(self.parts))
+        return re.sub(r"\n\s*\n+", "\n\n", t).strip()
+
+
+def fetch(url: str) -> tuple[str, str]:
+    req = urllib.request.Request(url, headers={"User-Agent": "agent-ws/0.1 (+scripts/ws ref add)"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            ctype = r.headers.get_content_type()
+            charset = r.headers.get_content_charset() or "utf-8"
+            body = r.read().decode(charset, errors="replace")
+    except Exception as e:  # noqa: BLE001 — 取得失敗は理由を見せて止まるだけでよい
+        die(f"取得に失敗: {url} ({e})")
+    if "html" in ctype:
+        p = _TextExtractor()
+        p.feed(body)
+        return p.title.strip(), p.text()
+    return "", body
+
+
+def cmd_ref_add(args):
+    task = current_task()
+    if not task:
+        die("現在のタスクが無い。scripts/ws task new か task use で設定する")
+    src = args.source
+    if re.match(r"https?://", src):
+        title, body = fetch(src)
+        kind = args.kind or "web"
+    else:
+        f = Path(src)
+        if not f.is_file():
+            die(f"{src} が無い")
+        title, body = f.stem, f.read_text(encoding="utf-8", errors="replace")
+        kind = args.kind or "file"
+        src = rel(f) if f.resolve().is_relative_to(ROOT) else str(f.resolve())
+    title = args.title or title or src
+    if len(body) > MAX_BODY:
+        body = body[:MAX_BODY] + f"\n\n（ws: {MAX_BODY:,} 文字で打ち切った。全文は source を見る）"
+    dest = task / "references" / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
+    if dest.exists():
+        dest = dest.with_name(dest.stem + f"_{now():%S}.md")
+    write(dest, render(TEMPLATES / "reference.md", title=title, kind=kind, source=src,
+                       retrieved_at=now().isoformat(timespec="seconds"),
+                       retrieved_by=os.environ.get("WS_AGENT", "unknown"),
+                       summary=args.summary, body=body))
+    update_index(task / "references")
+    update_index(task)
+    print(f"保存: {rel(dest)}")
+
+
+# ---- 用語集と文字起こし ----------------------------------------------------
+
+def load_glossary(proj: Path) -> list[tuple[str, str]]:
+    """glossary.md の表から (誤変換, 正式表記) の組を長い順に返す。"""
+    g = proj / "knowledges" / "glossary.md"
+    if not g.exists():
+        return []
+    pairs = []
+    for line in g.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or cells[0] in ("", "正式表記") or set(cells[0]) <= set("-: "):
+            continue
+        term = cells[0]
+        for alias in re.split(r"[,、，]", cells[2]):
+            alias = alias.strip()
+            if len(alias) >= 2 and alias != term:
+                pairs.append((alias, term))
+    # ponytail: 長い順に単純置換。連鎖置換（置換結果が別の誤変換に一致）は用語集側で避ける
+    pairs.sort(key=lambda p: -len(p[0]))
+    return pairs
+
+
+def cmd_transcript_normalize(args):
+    f = Path(args.file)
+    if not f.is_file():
+        die(f"{args.file} が無い")
+    name = args.project or project_of(f) or (project_of(current_task()) if current_task() else None)
+    if not name:
+        die("案件が分からない。--project <name> を付ける")
+    pairs = load_glossary(project_dir(name))
+    text = f.read_text(encoding="utf-8", errors="replace")
+    counts: dict[tuple[str, str], int] = {}
+    for alias, term in pairs:
+        n = text.count(alias)
+        if n:
+            text = text.replace(alias, term)
+            counts[(alias, term)] = n
+    out = f.with_name(f.stem + ".normalized.md")
+    write(out, text)
+    print(f"出力: {rel(out) if out.resolve().is_relative_to(ROOT) else out}")
+    if not counts:
+        print("  置換なし（用語集に一致する誤変換が無い。用語集: "
+              f"projects/{name}/knowledges/glossary.md）")
+    for (alias, term), n in counts.items():
+        print(f"  {alias} → {term}: {n}")
+
+
+def cmd_glossary_add(args):
+    proj = project_dir(args.project)
+    g = proj / "knowledges" / "glossary.md"
+    if not g.exists():
+        write(g, render(TEMPLATES / "project" / "knowledges" / "glossary.md",
+                        project=args.project, date=today()))
+    cell = lambda s: (s or "").replace("|", "／").strip()  # noqa: E731
+    row = f"| {cell(args.term)} | {cell(args.reading)} | {cell(args.alias)} | {cell(args.desc)} |"
+    write(g, g.read_text(encoding="utf-8").rstrip("\n") + "\n" + row + "\n")
+    update_index(proj / "knowledges")
+    print(f"追加: {row}")
+
+
+def cmd_know_new(args):
+    proj = project_dir(args.project)
+    kd = proj / "knowledges"
+    nums = [int(m.group(1)) for p in kd.glob("*.md") if (m := re.match(r"(\d{3})_", p.name))]
+    dest = kd / f"{max(nums, default=0) + 1:03d}_{slugify(args.title)}.md"
+    write(dest, render(TEMPLATES / "knowledge.md", title=args.title, date=today()))
+    update_index(kd)
+    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く")
+
+
+# ---- 点検 ------------------------------------------------------------------
+
+def cmd_doctor(args):
+    problems: list[str] = []
+    if not PROJECTS.is_dir():
+        die("projects/ が無い")
+    for proj in sorted(p for p in PROJECTS.iterdir() if p.is_dir()):
+        for req in ("index.md", "knowledges/index.md", "tasks/index.md"):
+            if not (proj / req).exists():
+                problems.append(f"{rel(proj)}/{req} が無い")
+        for k in (proj / "knowledges").glob("*.md") if (proj / "knowledges").is_dir() else []:
+            if k.name != "index.md" and not read_frontmatter(k)[0].get("summary"):
+                problems.append(f"{rel(k)}: frontmatter の summary が空")
+        tasks = proj / "tasks"
+        for t in sorted(p for p in tasks.iterdir() if p.is_dir()) if tasks.is_dir() else []:
+            idx = t / "index.md"
+            if not idx.exists():
+                problems.append(f"{rel(t)}/index.md が無い")
+                continue
+            meta, _ = read_frontmatter(idx)
+            if not meta.get("status"):
+                problems.append(f"{rel(idx)}: frontmatter の status が無い")
+            refs = t / "references"
+            if not refs.is_dir():
+                problems.append(f"{rel(t)}/references/ が無い")
+            elif meta.get("status") == "doing" and not [p for p in refs.glob("*.md") if p.name != "index.md"]:
+                problems.append(f"{rel(t)}: references/ が空（情報源を記録していない）")
+    for p in problems:
+        print("- " + p)
+    print("問題なし" if not problems else f"{len(problems)} 件")
+    sys.exit(1 if problems else 0)
+
+
+# ---- hooks（Claude Code / Codex CLI 共通） ---------------------------------
+
+def _stdin_json() -> dict:
+    try:
+        return json.loads(sys.stdin.read() or "{}")
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _section(body: str, name: str, limit: int = 300) -> str:
+    m = re.search(rf"^##\s+{re.escape(name)}\s*\n(.*?)(?=^##\s|\Z)", body, re.S | re.M)
+    text = " ".join(m.group(1).split()) if m else ""
+    return text[:limit] if text else "（未記入）"
+
+
+def cmd_hook_session_start(args):
+    _stdin_json()
+    t = current_task()
+    if not t:
+        print("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
+              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。")
+        return
+    meta, body = read_frontmatter(t / "index.md")
+    print(f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
+          f"まず {rel(t)}/index.md を読む。他の tasks/ 配下は読まない（hook が拒否する）。"
+          f"ナレッジは projects/{project_of(t)}/knowledges/index.md から必要なものだけ開く。\n"
+          f"次の一手（index.md より）: {_section(body, '次の一手')}")
+
+
+def cmd_hook_pre_tool_use(args):
+    data = _stdin_json()
+    tool = data.get("tool_name", "")
+    blob = json.dumps(data.get("tool_input", {}), ensure_ascii=False)
+    if tool in ("Bash", "shell") and "scripts/ws" in blob:
+        return  # ws 自身によるタスク操作は通す
+    hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
+    if not hits:
+        return
+    cur = current_task()
+    cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
+    others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
+    if not others:
+        return
+    if cur:
+        reason = (f"[agent-ws] 現在のタスク（{rel(cur)}）以外のタスクフォルダにはアクセスしない: "
+                  f"{', '.join(others)}\n"
+                  f"ナレッジの正本は projects/{cur_key[0]}/knowledges/（入口は knowledges/index.md）。"
+                  "そこに無ければ knowledge-promote で昇格するか、人に聞く。"
+                  f"タスクを切り替えるなら scripts/ws task use {others[0]}。")
+    else:
+        reason = (f"[agent-ws] 現在のタスクが未設定のまま tasks/ 配下にアクセスしない: {', '.join(others)}\n"
+                  "着手するには scripts/ws task new <project> <slug>（新規）か "
+                  f"scripts/ws task use {others[0]}（既存）。")
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
+    }}, ensure_ascii=False))
+
+
+# ---- 引数 ------------------------------------------------------------------
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="scripts/ws", description=__doc__.splitlines()[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("project", help="案件").add_subparsers(dest="sub", required=True)
+    q = p.add_parser("new", help="案件フォルダを雛形から作る")
+    q.add_argument("name")
+    q.set_defaults(fn=cmd_project_new)
+
+    t = sub.add_parser("task", help="タスク").add_subparsers(dest="sub", required=True)
+    q = t.add_parser("new", help="タスクフォルダを作り、現在のタスクにする")
+    q.add_argument("project")
+    q.add_argument("slug", help="英数字の短い名前。フォルダ名は yyyymmdd_<slug>")
+    q.add_argument("--title", help="index.md のタイトル（省略時は slug）")
+    q.set_defaults(fn=cmd_task_new)
+    q = t.add_parser("use", help="現在のタスクを切り替える")
+    q.add_argument("path", help="projects/<案件>/tasks/<タスク>")
+    q.set_defaults(fn=cmd_task_use)
+    t.add_parser("current", help="現在のタスクを表示する").set_defaults(fn=cmd_task_current)
+    t.add_parser("done", help="現在のタスクを完了にし、現在のタスクを解除する").set_defaults(fn=cmd_task_done)
+
+    r = sub.add_parser("ref", help="情報源").add_subparsers(dest="sub", required=True)
+    q = r.add_parser("add", help="URL かファイルを現在のタスクの references/ に保存する")
+    q.add_argument("source", help="URL かファイルパス")
+    q.add_argument("--summary", required=True, help="1文の要約（index.md の一覧に出る）")
+    q.add_argument("--title")
+    q.add_argument("--kind", choices=REF_KINDS, help="省略時は URL なら web、ファイルなら file")
+    q.set_defaults(fn=cmd_ref_add)
+
+    tr = sub.add_parser("transcript", help="文字起こし").add_subparsers(dest="sub", required=True)
+    q = tr.add_parser("normalize", help="用語集の誤変換を正式表記に置換した *.normalized.md を作る")
+    q.add_argument("file")
+    q.add_argument("--project", help="省略時はファイルの場所か現在のタスクから決める")
+    q.set_defaults(fn=cmd_transcript_normalize)
+
+    g = sub.add_parser("glossary", help="用語集").add_subparsers(dest="sub", required=True)
+    q = g.add_parser("add", help="用語集に1行足す")
+    q.add_argument("project")
+    q.add_argument("term", help="正式表記")
+    q.add_argument("--reading", help="よみ")
+    q.add_argument("--alias", help="誤変換・別表記（カンマ区切り）")
+    q.add_argument("--desc", help="説明")
+    q.set_defaults(fn=cmd_glossary_add)
+
+    k = sub.add_parser("know", help="ナレッジ").add_subparsers(dest="sub", required=True)
+    q = k.add_parser("new", help="knowledges/NNN_<title>.md を雛形から作る")
+    q.add_argument("project")
+    q.add_argument("title")
+    q.set_defaults(fn=cmd_know_new)
+
+    q = sub.add_parser("index", help="index.md の自動生成部分（<!-- ws:index -->）を更新する")
+    q.add_argument("dir", nargs="?", help="省略時は projects/ 以下すべて")
+    q.set_defaults(fn=cmd_index)
+
+    sub.add_parser("doctor", help="index.md や frontmatter の欠落を報告する").set_defaults(fn=cmd_doctor)
+
+    h = sub.add_parser("hook", help="エージェントの hooks から呼ばれる（stdin に JSON）").add_subparsers(dest="sub", required=True)
+    h.add_parser("session-start").set_defaults(fn=cmd_hook_session_start)
+    h.add_parser("pre-tool-use").set_defaults(fn=cmd_hook_pre_tool_use)
+
+    args = ap.parse_args(argv)
+    if args.cmd == "hook":
+        try:
+            args.fn(args)
+        except Exception as e:  # noqa: BLE001 — hook が壊れても作業を止めない（fail-open）
+            print(f"[agent-ws] hook error: {e}", file=sys.stderr)
+        return
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()
