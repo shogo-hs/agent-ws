@@ -88,6 +88,17 @@ def project_dir(name: str) -> Path:
     return p
 
 
+def _sess(sid: str, kind: str) -> Path:
+    return SESSIONS / f"{sid}.{kind}"
+
+
+def session_id() -> str | None:
+    """エージェントの Bash から呼ばれた CLI が自分のセッションを知る手段。hook は stdin の session_id を使う。
+    端末から叩くと None（.ws/current だけを見る）。Codex を先に見るのは、Claude Code の Bash から
+    codex exec を起こすと両方の変数が見え、内側で動く hook は Codex の ID を持つため。"""
+    return os.environ.get("CODEX_THREAD_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+
+
 # ---- frontmatter（1階層の key: value だけ読む） ----------------------------
 
 FM_RE = re.compile(r"^---\n(.*?)\n---\n?", re.S)
@@ -175,16 +186,28 @@ def cmd_index(args):
 
 # ---- 案件・タスク ----------------------------------------------------------
 
-def current_task() -> Path | None:
-    if not CURRENT.exists():
+def current_task(sid: str | None = None) -> Path | None:
+    """現在のタスク。sid があればセッションの写し（.ws/sessions/<sid>.current）を優先し、
+    写しが無ければ .ws/current を写してから使う。以後は他のセッションが .ws/current を書き換えても
+    影響を受けない（同じ clone で 2 セッションを並行させたときの競合。issue #1）。"""
+    src = CURRENT
+    if sid:
+        src = _sess(sid, "current")
+        if not src.exists() and CURRENT.exists():
+            SESSIONS.mkdir(parents=True, exist_ok=True)
+            src.write_text(CURRENT.read_text(encoding="utf-8"), encoding="utf-8")
+    if not src.exists():
         return None
-    p = ROOT / CURRENT.read_text(encoding="utf-8").strip()
+    p = ROOT / src.read_text(encoding="utf-8").strip()
     return p if (p / "index.md").exists() else None
 
 
-def set_current(task_dir: Path):
+def set_current(task_dir: Path, sid: str | None = None):
     CURRENT.parent.mkdir(exist_ok=True)
     CURRENT.write_text(rel(task_dir) + "\n", encoding="utf-8")
+    if sid:
+        SESSIONS.mkdir(parents=True, exist_ok=True)
+        _sess(sid, "current").write_text(rel(task_dir) + "\n", encoding="utf-8")
 
 
 def cmd_project_new(args):
@@ -210,7 +233,7 @@ def cmd_task_new(args):
                                  title=title, project=args.project, date=today()))
     write(d / "references" / "index.md",
           render(TEMPLATES / "task" / "references" / "index.md", title=title))
-    set_current(d)
+    set_current(d, session_id())
     update_index(proj / "tasks")
     print(f"作成: {rel(d)}\n現在のタスクに設定した\n次: {rel(d / 'index.md')} の「目的」を書く")
 
@@ -219,12 +242,12 @@ def cmd_task_use(args):
     d = Path(args.path) if Path(args.path).is_absolute() else ROOT / args.path
     if not (d / "index.md").exists():
         die(f"{args.path} にタスクの index.md が無い")
-    set_current(d)
+    set_current(d, session_id())
     print(f"現在のタスク: {rel(d)}")
 
 
 def cmd_task_current(args):
-    t = current_task()
+    t = current_task(session_id())
     if not t:
         print("現在のタスクは未設定（scripts/ws task new <project> <slug> か task use <path>）")
         sys.exit(1)
@@ -233,11 +256,15 @@ def cmd_task_current(args):
 
 
 def cmd_task_done(args):
-    t = current_task()
+    sid = session_id()
+    t = current_task(sid)
     if not t:
         die("現在のタスクが無い")
     set_frontmatter(t / "index.md", status="done", updated=today())
-    CURRENT.unlink()
+    if sid:
+        _sess(sid, "current").unlink(missing_ok=True)
+    if CURRENT.exists() and CURRENT.read_text(encoding="utf-8").strip() == rel(t):
+        CURRENT.unlink()  # 他のセッションが別のタスクに切り替えていたら、そちらは残す
     update_index(t.parent)
     print(f"完了: {rel(t)}（現在のタスクを解除した）")
 
@@ -299,7 +326,7 @@ def fetch(url: str) -> tuple[str, str]:
 
 
 def cmd_ref_add(args):
-    task = current_task()
+    task = current_task(session_id())
     if not task:
         die("現在のタスクが無い。scripts/ws task new か task use で設定する")
     src = args.source
@@ -356,7 +383,8 @@ def cmd_transcript_normalize(args):
     f = Path(args.file)
     if not f.is_file():
         die(f"{args.file} が無い")
-    name = args.project or project_of(f) or (project_of(current_task()) if current_task() else None)
+    cur = current_task(session_id())
+    name = args.project or project_of(f) or (project_of(cur) if cur else None)
     if not name:
         die("案件が分からない。--project <name> を付ける")
     pairs = load_glossary(project_dir(name))
@@ -504,10 +532,6 @@ def _section(body: str, name: str, limit: int = 300) -> str:
     return text[:limit] if text else "（未記入）"
 
 
-def _sess(sid: str, kind: str) -> Path:
-    return SESSIONS / f"{sid}.{kind}"
-
-
 def _mark_stop(sid: str):
     SESSIONS.mkdir(parents=True, exist_ok=True)
     _sess(sid, "last_stop").write_text(str(int(time.time())), encoding="utf-8")
@@ -540,7 +564,7 @@ def cmd_hook_user_prompt_submit(args):
     warned.write_text(str(int(time.time())), encoding="utf-8")
     saved = _sess(sid, "blocked_prompt")
     saved.write_text(data.get("prompt") or data.get("user_input") or "", encoding="utf-8")
-    cur = current_task()
+    cur = current_task(sid)
     where = f"現在のタスクは {rel(cur)}（index.md に現在地と次の一手）" if cur else "現在のタスクは未設定"
     print(f"[agent-ws] 前回の応答から {gap_min:.0f} 分空いています。プロンプトキャッシュ（{CACHE_TTL_MIN} 分）は"
           "切れているので、この会話に続きを送ると会話全文を定価で再処理します。\n"
@@ -563,7 +587,8 @@ def cmd_hook_session_start(args):
     if sid:
         SESSIONS.mkdir(parents=True, exist_ok=True)
         if source in ("startup", "clear"):
-            for kind in ("last_stop", "warned", "blocked_prompt"):
+            # current も捨てる: 新しいセッションは最後に設定したタスク（.ws/current）から始める
+            for kind in ("last_stop", "warned", "blocked_prompt", "current"):
                 _sess(sid, kind).unlink(missing_ok=True)
         elif source == "compact":
             _mark_stop(sid)  # 要約のリクエストが今飛んだので、タイマーはここから
@@ -573,7 +598,7 @@ def cmd_hook_session_start(args):
                 f.unlink(missing_ok=True)
     lessons = lesson_lines()
     tail = "\n人からの指摘（LESSONS.md。守る）:\n" + ("\n".join(lessons) if lessons else "（無し）")
-    t = current_task()
+    t = current_task(sid)
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
               "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。" + tail)
@@ -594,13 +619,22 @@ def cmd_hook_session_start(args):
 def cmd_hook_pre_tool_use(args):
     data = _stdin_json()
     tool = data.get("tool_name", "")
+    sid = data.get("session_id")
     blob = json.dumps(data.get("tool_input", {}), ensure_ascii=False)
     if tool in ("Bash", "shell") and "scripts/ws" in blob:
+        m = sid and re.search(r"\btask\s+(use|new|done)\b", blob)
+        if m:
+            # 切り替え・完了の相手は .ws/current。CLI が環境変数でセッションを知らない場合に備えて
+            # 写しを捨て、CLI か次の hook が写し直す。done は写しの内容を先に .ws/current へ戻す
+            copy = _sess(sid, "current")
+            if m.group(1) == "done" and copy.exists():
+                CURRENT.write_text(copy.read_text(encoding="utf-8"), encoding="utf-8")
+            copy.unlink(missing_ok=True)
         return  # ws 自身によるタスク操作は通す
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
     if not hits:
         return
-    cur = current_task()
+    cur = current_task(sid)
     cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
     others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
     if not others:
