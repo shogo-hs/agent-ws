@@ -122,8 +122,7 @@ Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` か�
 
 「`mkdir` ではなく `scripts/ws task new` を使う」は規約とスキルで指示しているだけで、hook では止めていません。エージェントが手でフォルダを作ってしまう事故が実際に起きたら、`projects/*/tasks/` 配下への直接の `mkdir` を hook で止める形に足せます。
 
-正規化版（`.normalized.md`）がある文字起こしの原文を Read しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed` は読み替えられないので deny し、正規化版のパスを示します）。
-compact のあとの注入文には、スキル名 5 つ（task-start / task-resume / ref-add / transcript-ingest / knowledge-promote）が 1 行足されます。
+正規化版（`.normalized.md`）がある文字起こしの原文を Read や Grep しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed`/`grep` は書き換えずに deny し、正規化版のパスを示します）。
 
 ### 1 時間以上空いたあとの 1 通目を止める
 

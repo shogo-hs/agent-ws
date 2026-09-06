@@ -503,19 +503,6 @@ class WsFlowTest(unittest.TestCase):
         self.assertTrue(norm.is_file())
         self.assertEqual(norm.read_text(encoding="utf-8"), "Kubernetesの話")
 
-    def test_session_start_compact_lists_skill_names(self):
-        self.ws("project", "new", "acme")
-        self.ws("task", "new", "acme", "t1")
-
-        def ev(source):
-            return json.dumps({"session_id": "s1", "hook_event_name": "SessionStart", "source": source})
-
-        out_compact = self.ws("hook", "session-start", stdin=ev("compact")).stdout
-        for name in ("task-start", "task-resume", "ref-add", "transcript-ingest", "knowledge-promote"):
-            self.assertIn(name, out_compact)
-        out_startup = self.ws("hook", "session-start", stdin=ev("startup")).stdout
-        self.assertNotIn("transcript-ingest", out_startup)
-
     def test_ttl_flag_and_env_override(self):
         def start_with_gap(sid, gap_minutes):
             self.ws("hook", "session-start",
@@ -594,6 +581,82 @@ class WsFlowTest(unittest.TestCase):
         front = old.read_text(encoding="utf-8")
         self.assertNotIn("段落 A", front)  # 段落 B は「引用した記述」に引用として残る
         self.assertIn("## 原文（改変しない）\n原文: [" + orig.name + "]", front)
+
+    def test_ref_split_refuses_derived_files_and_new_format(self):
+        """must: 派生ファイルと新形式の要点ファイルに ref split をかけても壊さない。ROOT 外でも落ちない。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        src = self.root / "m.txt"
+        src.write_text("本文\n", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--kind", "transcript", "--summary", "s")
+        front = next(p for p in (task / "references").glob("*.md")
+                     if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        orig = front.with_name(front.stem + ".orig.md")
+        self.ws("transcript", "normalize", str(front))
+        norm = front.with_name(front.stem + ".normalized.md")
+        # 派生ファイルは拒否（中身は変わらない）
+        for derived in (orig, norm):
+            before = derived.read_text(encoding="utf-8")
+            r = self.ws("ref", "split", str(derived), check=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("派生ファイル", r.stderr)
+            self.assertEqual(derived.read_text(encoding="utf-8"), before)
+            self.assertFalse(derived.with_name(derived.stem + ".orig.md").exists())
+        # .orig.md を失った新形式の要点ファイルに当てても、ポインタ行を原文にした偽の .orig.md を作らない
+        orig.unlink()
+        r = self.ws("ref", "split", str(front))
+        self.assertIn("済", r.stdout)
+        self.assertFalse(orig.exists())
+        self.assertIn("原文が無い", self.ws("doctor", check=False).stdout)  # doctor の検査が黙らない
+        # ROOT 外の旧形式でも traceback にならない
+        outside = Path(tempfile.mkdtemp(prefix="ws-outside-")) / "o.md"
+        outside.write_text("---\ntitle: \"o\"\nsummary: \"o\"\n---\n# o\n\n## 原文（改変しない）\n外の本文\n", encoding="utf-8")
+        r = self.ws("ref", "split", str(outside))
+        self.assertIn("分割", r.stdout)
+        self.assertEqual(outside.with_name("o.orig.md").read_text(encoding="utf-8").strip(), "外の本文")
+        shutil.rmtree(outside.parent)
+
+    def test_ref_add_source_named_orig_md_is_still_listed(self):
+        """情報源のファイル名が *.orig.md（スナップショットの原文など）でも、要点ファイルが index と doctor から消えない。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        src = self.root / "snap.orig.md"
+        src.write_text("原文です\n", encoding="utf-8")
+        out = self.ws("ref", "add", str(src), "--summary", "スナップショット").stdout
+        front = next(p for p in (task / "references").glob("*.md")
+                     if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        self.assertTrue(front.name.endswith("_orig.md"), front.name)
+        self.assertTrue(front.with_name(front.stem + ".orig.md").is_file())
+        self.assertIn(front.name, (task / "references/index.md").read_text(encoding="utf-8"))
+        self.assertIn("保存:", out)
+
+    def test_pre_tool_use_reads_back_grep_old_format_and_relative_paths(self):
+        """Grep も読み替える。旧形式（.orig.md 無し・.normalized.md あり）と相対パスでも効く。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        old = task / "references" / "20260101_0000_old.md"
+        old.write_text("---\ntitle: \"旧\"\nkind: transcript\nsummary: \"旧\"\n---\n# 旧\n\n## 原文（改変しない）\n久保ネティス\n", encoding="utf-8")
+        old.with_name("20260101_0000_old.normalized.md").write_text("Kubernetes\n", encoding="utf-8")
+        norm = str(old.with_name("20260101_0000_old.normalized.md"))
+        sid = "s1"
+        # Grep（絶対パス）
+        r = self.ws("hook", "pre-tool-use", stdin=json.dumps(
+            {"session_id": sid, "tool_name": "Grep", "tool_input": {"pattern": "K", "path": str(old)}}))
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "allow")
+        self.assertEqual(out["updatedInput"]["path"], norm)
+        self.assertEqual(out["updatedInput"]["pattern"], "K")
+        # Read（旧形式・相対パス）
+        r = self.ws("hook", "pre-tool-use", stdin=json.dumps(
+            {"session_id": sid, "tool_name": "Read", "tool_input": {"file_path": str(old.relative_to(self.root))}}))
+        self.assertEqual(json.loads(r.stdout)["hookSpecificOutput"]["updatedInput"]["file_path"], norm)
+        # Grep でディレクトリを指すときは読み替えない（素通し）
+        r = self.ws("hook", "pre-tool-use", stdin=json.dumps(
+            {"session_id": sid, "tool_name": "Grep", "tool_input": {"pattern": "K", "path": str(task / "references")}}))
+        self.assertEqual(r.stdout.strip(), "")
 
 
 if __name__ == "__main__":

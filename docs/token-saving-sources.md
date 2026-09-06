@@ -5,7 +5,7 @@ AGENTS.md「compact するときに残すもの」、README「セッションの
 
 | # | 出典（題名と URL） | 取得日時 | via | ファイル | 支えている規則 |
 |---|---|---|---|---|---|
-| 1 | Explore the context window — https://code.claude.com/docs/en/context-window | 2026-09-06T15:51:13+09:00 | jina | [docs/snapshots/20260906_1551_Explore_the_context_window_-_Claude_Code.md](snapshots/20260906_1551_Explore_the_context_window_-_Claude_Code.md) | 要点と原文の分離（compact 後に再読されるのは直近 5 ファイル、5,000 トークン超はパス参照だけ） |
+| 1 | Explore the context window — https://code.claude.com/docs/en/context-window | 2026-09-06T15:51:13+09:00 | jina | [docs/snapshots/20260906_1551_Explore_the_context_window_-_Claude_Code.md](snapshots/20260906_1551_Explore_the_context_window_-_Claude_Code.md) | 要点と原文の分離（compact 後に再読されるのは直近 5 ファイルで、5,000 トークン超はパス参照だけになる） |
 | 2 | Manage costs effectively — https://code.claude.com/docs/en/costs | 2026-09-06T15:51:15+09:00 | jina | [docs/snapshots/20260906_1551_Manage_costs_effectively_-_Claude_Code_D.md](snapshots/20260906_1551_Manage_costs_effectively_-_Claude_Code_D.md) | compact で残すものを CLAUDE.md（@AGENTS.md）に書く／hook で読む先を差し替える |
 | 3 | Extend Claude with skills — https://code.claude.com/docs/en/skills | 2026-09-06T15:51:17+09:00 | jina | [docs/snapshots/20260906_1551_Extend_Claude_with_skills_-_Claude_Code_.md](snapshots/20260906_1551_Extend_Claude_with_skills_-_Claude_Code_.md) | transcript-ingest の context: fork / background: false |
 | 4 | How Claude Code uses prompt caching — https://code.claude.com/docs/en/prompt-caching | 2026-09-06T15:51:18+09:00 | jina | [docs/snapshots/20260906_1551_How_Claude_Code_uses_prompt_caching_-_Cl.md](snapshots/20260906_1551_How_Claude_Code_uses_prompt_caching_-_Cl.md) | モデルと effort は冒頭で決める／/rewind／promptCacheTtl |

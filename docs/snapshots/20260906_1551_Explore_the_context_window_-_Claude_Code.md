@@ -5,7 +5,7 @@ source: "https://code.claude.com/docs/en/context-window"
 via: jina
 retrieved_at: 2026-09-06T15:51:13+09:00
 retrieved_by: unknown
-summary: "Claude Code の文脈の中身。compact 後に再読されるのは直近 5 ファイル・5,000 トークン超はパス参照だけ・スキル一覧は再注入されない"
+summary: "Claude Code の文脈の中身。compact 後に再読されるのは直近 5 ファイルで、5,000 トークン超はパス参照だけになる"
 ---
 # Explore the context window - Claude Code Docs
 

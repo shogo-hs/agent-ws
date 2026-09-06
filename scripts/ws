@@ -387,6 +387,8 @@ def cmd_ref_add(args):
         src = rel(f) if f.resolve().is_relative_to(ROOT) else str(f.resolve())
     title = args.title or title or src
     dest = dest_dir / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
+    if dest.name.endswith(".orig.md"):  # 情報源が *.orig.md（スナップショットの原文など）でも要点側を原文扱いの名前にしない
+        dest = dest.with_name(dest.name[: -len(".orig.md")] + "_orig.md")
     if dest.exists():
         dest = dest.with_name(dest.stem + f"_{now():%S}.md")
     # 要点ファイル（frontmatter＋引用した記述＋使いどころ）と原文ファイル（.orig.md、frontmatter 無し）の対で保存する。
@@ -412,26 +414,37 @@ def cmd_ref_add(args):
 _ORIG_SECTION_RE = re.compile(r"^##\s+原文（改変しない）\s*\n(.*)\Z", re.S | re.M)
 
 
+def _shown(p: Path) -> str:
+    """表示用のパス。ROOT の中なら相対、外（ref add --dir で外に置いたもの）なら絶対。"""
+    return rel(p) if p.resolve().is_relative_to(ROOT) else str(p.resolve())
+
+
 def cmd_ref_split(args):
-    """旧形式（1 ファイルに原文まで書いた reference）を要点＋<stem>.orig.md の対に分割する。冪等。"""
+    """旧形式（1 ファイルに原文まで書いた reference）を要点＋<stem>.orig.md の対に分割する。冪等。
+    派生ファイル（.orig.md / .normalized.md / .summary.md）と、既に新形式の要点ファイルには手を付けない。"""
     f = Path(args.file)
     if not f.is_file():
         die(f"{args.file} が無い")
+    if f.name.endswith((".orig.md", ".normalized.md", ".summary.md")):
+        die(f"{_shown(f)} は派生ファイル。ref split は旧形式の reference（1 ファイル）にだけ使う")
     orig = f.with_name(f.stem + ".orig.md")
     if orig.is_file():
-        print(f"済: {rel(f)} は既に分割済み（{rel(orig)}）")
+        print(f"済: {_shown(f)} は既に分割済み（{_shown(orig)}）")
         return
     text = f.read_text(encoding="utf-8")
     m = _ORIG_SECTION_RE.search(text)
     raw = m.group(1).lstrip("\n") if m else ""
+    if raw.lstrip().startswith("原文: "):
+        print(f"済: {_shown(f)} は既に新形式（.orig.md が無いので原文は失われている。source から ref add で撮り直す）")
+        return
     if not raw.strip():
-        print(f"{rel(f)}: 「原文（改変しない）」節が空。何もしない")
+        print(f"{_shown(f)}: 「原文（改変しない）」節が空。何もしない")
         return
     write(orig, raw)
     pointer = f"原文: [{orig.name}]({orig.name})（改変しない。文字起こしなら正規化版 *.normalized.md を読む）\n\n"
     new_text = text[:m.start(1)] + pointer + text[m.end(1):]
     f.write_text(new_text, encoding="utf-8")
-    print(f"分割: {rel(f)} / 原文: {rel(orig)}")
+    print(f"分割: {_shown(f)} / 原文: {_shown(orig)}")
     if f.parent.name == "references":
         update_index(f.parent)
         update_index(f.parent.parent)
@@ -718,10 +731,6 @@ def cmd_hook_session_start(args):
                 f.unlink(missing_ok=True)
     lessons = lesson_lines()
     tail = "\n人からの指摘（LESSONS.md。守る）:\n" + ("\n".join(lessons) if lessons else "（無し）")
-    if source == "compact":
-        # compact 後はスキル一覧が再注入されない（会話の要約に飲まれる）ので、ここで名前だけ列挙する
-        tail += ("\nスキル（/名前 で呼ぶ）: "
-                 "task-start / task-resume / ref-add / transcript-ingest / knowledge-promote")
     t = current_task(sid)
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
@@ -824,13 +833,14 @@ def cmd_hook_pre_tool_use(args):
             return
     # ここまで来たら他タスクへのアクセスではない。正規化版があるならそちらへ読み替える
     # （誤変換の残る原文を読ませない。順序はここが最後＝上の deny 判定を全部通ったあとに評価する）
-    if tool == "Read":
-        norm = _normalized_for(tool_input.get("file_path") or "")
+    if tool in ("Read", "Grep"):
+        key = "file_path" if tool == "Read" else "path"  # Grep はディレクトリ指定なら対象外（_normalized_for が None）
+        norm = _normalized_for(tool_input.get(key) or "")
         if norm:
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
-                "updatedInput": {**tool_input, "file_path": str(norm)},
+                "updatedInput": {**tool_input, key: str(norm)},
             }}, ensure_ascii=False))
     elif tool in ("Bash", "shell"):
         for m in re.finditer(r"[^\s'\"]+\.md", tool_input.get("command", "")):
