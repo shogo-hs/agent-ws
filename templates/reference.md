@@ -16,4 +16,4 @@ summary: "{{summary}}"
 （この記述をどう使ったか、使わなかったならその理由）
 
 ## 原文（改変しない）
-{{body}}
+原文: [{{orig_name}}]({{orig_name}})（改変しない。文字起こしなら正規化版 *.normalized.md を読む）

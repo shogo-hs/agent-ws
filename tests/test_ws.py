@@ -73,7 +73,7 @@ class WsFlowTest(unittest.TestCase):
         src = self.root / "meeting.txt"
         src.write_text("クバネティスの久保ネティス移行はポックで進める。担当は山田。", encoding="utf-8")
         self.ws("ref", "add", str(src), "--summary", "週次定例の文字起こし", "--kind", "transcript")
-        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
         text = ref.read_text(encoding="utf-8")
         self.assertIn("retrieved_at:", text)
         self.assertIn("kind: transcript", text)
@@ -256,13 +256,21 @@ class WsFlowTest(unittest.TestCase):
         src = self.root / "note.txt"
         src.write_text("メモ本文", encoding="utf-8")
         self.ws("ref", "add", str(src), "--summary", "メモ")
-        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        orig = ref.with_name(ref.stem + ".orig.md")
         text = ref.read_text(encoding="utf-8")
         self.assertIn("via: local", text)
         self.assertIn("## 引用した記述（原文のまま。要約しない）", text)
         self.assertIn("## このタスクでの使いどころ（使わなかったなら理由）", text)
         self.assertIn("## 原文（改変しない）", text)
-        self.assertIn("メモ本文", text)
+        self.assertIn(f"原文: [{orig.name}]", text)  # 要点側は本文を持たずポインタだけ
+        self.assertNotIn("メモ本文", text)
+        self.assertTrue(orig.is_file())
+        self.assertEqual(orig.read_text(encoding="utf-8"), "メモ本文")
+        # index.md・references/index.md の一覧には要点ファイルだけが載る（.orig.md は載らない）
+        self.assertIn(ref.name, (task / "index.md").read_text(encoding="utf-8"))
+        self.assertNotIn(orig.name, (task / "index.md").read_text(encoding="utf-8"))
+        self.assertNotIn(orig.name, (task / "references/index.md").read_text(encoding="utf-8"))
 
     def test_ref_add_summary_optional(self):
         self.ws("project", "new", "acme")
@@ -272,7 +280,7 @@ class WsFlowTest(unittest.TestCase):
         src.write_text("メモ", encoding="utf-8")
         out = self.ws("ref", "add", str(src)).stdout  # --summary を省略
         self.assertIn("summary が空", out)
-        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
         self.assertIn('summary: ""', ref.read_text(encoding="utf-8"))
         # 後から埋められる（frontmatter を書き換えられる）
         text = ref.read_text(encoding="utf-8").replace('summary: ""', 'summary: "後から埋めた"', 1)
@@ -285,8 +293,11 @@ class WsFlowTest(unittest.TestCase):
         src.write_text("根拠になる記述", encoding="utf-8")
         out_dir = self.root / "docs"
         self.ws("ref", "add", str(src), "--summary", "根拠メモ", "--dir", str(out_dir))
-        saved = next(out_dir.glob("*.md"))
-        self.assertIn("根拠になる記述", saved.read_text(encoding="utf-8"))
+        saved = next(p for p in out_dir.glob("*.md") if not p.name.endswith(".orig.md"))
+        orig = saved.with_name(saved.stem + ".orig.md")
+        self.assertTrue(orig.is_file())  # --dir 指定でも要点と原文の対ができる
+        self.assertIn("根拠になる記述", orig.read_text(encoding="utf-8"))
+        self.assertNotIn("根拠になる記述", saved.read_text(encoding="utf-8"))
 
     def test_doctor_flags_reference_gaps_and_stale_knowledge(self):
         self.ws("project", "new", "acme")
@@ -305,7 +316,7 @@ class WsFlowTest(unittest.TestCase):
         src = self.root / "clean.txt"
         src.write_text("クリーンな原文", encoding="utf-8")
         self.ws("ref", "add", str(src), "--summary", "クリーンな要約")
-        ref = next(p for p in (clean_task / "references").glob("*.md") if p.name != "index.md")
+        ref = next(p for p in (clean_task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
         text = ref.read_text(encoding="utf-8")
         text = text.replace("（このタスクに関係する記述を原文のまま引用する。複数あれば箇条書き）", "「原文からの引用」")
         text = text.replace("（この記述をどう使ったか、使わなかったならその理由）", "このまま使った")
@@ -322,9 +333,8 @@ class WsFlowTest(unittest.TestCase):
         src2.write_text("乱れた原文", encoding="utf-8")
         out = self.ws("ref", "add", str(src2)).stdout  # --summary を省略
         self.assertIn("summary が空", out)
-        ref2 = next(p for p in (stale_task / "references").glob("*.md") if p.name != "index.md")
-        ref2.write_text(re.sub(r"(## 原文（改変しない）\n).*", r"\1", ref2.read_text(encoding="utf-8"), flags=re.S),
-                        encoding="utf-8")
+        ref2 = next(p for p in (stale_task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        ref2.with_name(ref2.stem + ".orig.md").unlink()  # 原文ファイルが欠落した状態を再現
         idx2 = stale_task / "index.md"
         idx2.write_text(idx2.read_text(encoding="utf-8").replace(
             know_line_placeholder, f"- knowledges/{kfile.name}（updated 2020-01-01）: 古い記録"),
@@ -334,7 +344,7 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         ref2_rel = ref2.relative_to(self.root).as_posix()
         idx2_rel = idx2.relative_to(self.root).as_posix()
-        self.assertIn(f"{ref2_rel}: 「原文（改変しない）」節が空", r.stdout)
+        self.assertIn(f"{ref2_rel}: 原文が無い（.orig.md も原文節も空）", r.stdout)
         self.assertIn(f"{ref2_rel}: 「引用した記述」節が未記入のまま", r.stdout)
         self.assertIn(f"{ref2_rel}: frontmatter の summary が空", r.stdout)
         self.assertIn(f"{idx2_rel}: 参照したナレッジ knowledges/{kfile.name} は記録（updated 2020-01-01）より新しい", r.stdout)
@@ -364,11 +374,11 @@ class WsFlowTest(unittest.TestCase):
             self.ws("task", "new", "acme", "t1")
             task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
             self.ws("ref", "add", f"http://127.0.0.1:{port}/", "--summary", "s", env={"WS_NO_JINA": "1"})
-            ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+            ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
             text = ref.read_text(encoding="utf-8")
             self.assertIn("via: direct", text)
             self.assertIn("Sample Page", text)
-            self.assertIn("Hello agent-ws", text)
+            self.assertIn("Hello agent-ws", ref.with_name(ref.stem + ".orig.md").read_text(encoding="utf-8"))
         finally:
             server.shutdown()
             thread.join(timeout=5)
@@ -423,6 +433,167 @@ class WsFlowTest(unittest.TestCase):
         r = self.ws("hook", "post-tool-use", stdin="not json")
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stdout.strip(), "")
+
+    def test_ref_split_migrates_old_format_and_is_idempotent(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        old = task / "references" / "20260101_0000_old.md"
+        old.write_text(
+            '---\n'
+            'title: "旧形式"\n'
+            'kind: file\n'
+            'source: "x.txt"\n'
+            'via: local\n'
+            'retrieved_at: 2026-01-01T00:00:00+09:00\n'
+            'retrieved_by: unknown\n'
+            'summary: "旧形式のテスト"\n'
+            '---\n'
+            '# 旧形式\n\n'
+            '## 引用した記述（原文のまま。要約しない）\n'
+            '「原文からの引用」\n\n'
+            '## このタスクでの使いどころ（使わなかったなら理由）\n'
+            'このまま使った\n\n'
+            '## 原文（改変しない）\n'
+            '旧形式の本文テキスト\n\n'
+            '## 本文の中の見出し（Web ページの Markdown に出る）\n'
+            '見出しのあとの本文\n',
+            encoding="utf-8")
+        # 旧形式（.orig.md 無し・原文節あり）は doctor が通す
+        r = self.ws("doctor", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+        out = self.ws("ref", "split", str(old)).stdout
+        self.assertIn("分割", out)
+        orig = old.with_name("20260101_0000_old.orig.md")
+        self.assertTrue(orig.is_file())
+        # 本文中の「## 見出し」で切らず、末尾まで原文側に移る
+        self.assertEqual(orig.read_text(encoding="utf-8").strip(),
+                         "旧形式の本文テキスト\n\n## 本文の中の見出し（Web ページの Markdown に出る）\n見出しのあとの本文")
+        self.assertIn(f"原文: [{orig.name}]", old.read_text(encoding="utf-8"))
+        self.assertNotIn("旧形式の本文テキスト", old.read_text(encoding="utf-8"))
+        self.assertNotIn("見出しのあとの本文", old.read_text(encoding="utf-8"))
+        # references/index.md の一覧に .orig.md は載らない
+        self.assertNotIn(orig.name, (task / "references/index.md").read_text(encoding="utf-8"))
+
+        # 2 回目は「済」で変化なし（冪等）
+        before = old.read_text(encoding="utf-8")
+        out2 = self.ws("ref", "split", str(old)).stdout
+        self.assertIn("済", out2)
+        self.assertEqual(old.read_text(encoding="utf-8"), before)
+
+    def test_transcript_normalize_reads_orig_file(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        self.ws("glossary", "add", "acme", "Kubernetes", "--alias", "クバネティス")
+        src = self.root / "meeting.txt"
+        src.write_text("クバネティスの話", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "s", "--kind", "transcript")
+        ref = next(p for p in (task / "references").glob("*.md")
+                   if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        orig = ref.with_name(ref.stem + ".orig.md")
+        norm = ref.with_name(ref.stem + ".normalized.md")
+        # 新形式（要点ファイルを渡す）→ 隣の .orig.md を読んで置換する
+        self.ws("transcript", "normalize", str(ref))
+        self.assertEqual(norm.read_text(encoding="utf-8"), "Kubernetesの話")
+        norm.unlink()
+        # .orig.md を直接渡しても出力名は <stem>.normalized.md のまま
+        self.ws("transcript", "normalize", str(orig))
+        self.assertTrue(norm.is_file())
+        self.assertEqual(norm.read_text(encoding="utf-8"), "Kubernetesの話")
+
+    def test_session_start_compact_lists_skill_names(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+
+        def ev(source):
+            return json.dumps({"session_id": "s1", "hook_event_name": "SessionStart", "source": source})
+
+        out_compact = self.ws("hook", "session-start", stdin=ev("compact")).stdout
+        for name in ("task-start", "task-resume", "ref-add", "transcript-ingest", "knowledge-promote"):
+            self.assertIn(name, out_compact)
+        out_startup = self.ws("hook", "session-start", stdin=ev("startup")).stdout
+        self.assertNotIn("transcript-ingest", out_startup)
+
+    def test_ttl_flag_and_env_override(self):
+        def start_with_gap(sid, gap_minutes):
+            self.ws("hook", "session-start",
+                    stdin=json.dumps({"session_id": sid, "hook_event_name": "SessionStart", "source": "startup"}))
+            self.ws("hook", "stop", stdin=json.dumps({"session_id": sid, "hook_event_name": "Stop"}))
+            rec = self.root / ".ws/sessions" / f"{sid}.last_stop"
+            rec.write_text(str(int(time.time()) - gap_minutes * 60), encoding="utf-8")
+
+        start_with_gap("sess-ttl1", 45)
+        r1 = self.ws("hook", "user-prompt-submit", "--ttl", "30",
+                     stdin=json.dumps({"session_id": "sess-ttl1", "hook_event_name": "UserPromptSubmit",
+                                       "prompt": "続き"}), check=False)
+        self.assertEqual(r1.returncode, 2, r1.stderr)
+        self.assertIn("30 分", r1.stderr)
+
+        # 環境変数 WS_CACHE_TTL_MIN があれば --ttl より優先される
+        start_with_gap("sess-ttl2", 45)
+        r2 = self.ws("hook", "user-prompt-submit", "--ttl", "30",
+                     stdin=json.dumps({"session_id": "sess-ttl2", "hook_event_name": "UserPromptSubmit",
+                                       "prompt": "続き"}), env={"WS_CACHE_TTL_MIN": "60"}, check=False)
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+
+    def test_pre_tool_use_reads_back_normalized_transcript(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        self.ws("glossary", "add", "acme", "Kubernetes", "--alias", "クバネティス")
+        src = self.root / "meeting.txt"
+        src.write_text("クバネティスの話", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "s", "--kind", "transcript")
+        ref = next(p for p in (task / "references").glob("*.md")
+                   if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        orig = ref.with_name(ref.stem + ".orig.md")
+        self.ws("transcript", "normalize", str(ref))
+        norm = ref.with_name(ref.stem + ".normalized.md")
+        self.assertTrue(norm.is_file())
+
+        # Read で原文（.orig.md）を指すと、正規化版へ読み替える（updatedInput）
+        r = self.ws("hook", "pre-tool-use",
+                    stdin=json.dumps({"tool_name": "Read", "tool_input": {"file_path": str(orig)}}))
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "allow")
+        self.assertEqual(out["updatedInput"]["file_path"], str(norm))
+
+        # 要点ファイル（隣に .orig.md がある。小さいので読ませてよい）は出力なし
+        self.assertIsNone(self.hook("Read", {"file_path": str(ref)}))
+
+        # Bash 越しに原文を読もうとすると deny。理由に正規化版のパスを示す
+        r2 = self.ws("hook", "pre-tool-use",
+                     stdin=json.dumps({"tool_name": "Bash", "tool_input": {"command": f"cat {orig}"}}))
+        out2 = json.loads(r2.stdout)["hookSpecificOutput"]
+        self.assertEqual(out2["permissionDecision"], "deny")
+        self.assertIn(norm.name, out2["permissionDecisionReason"])
+
+        # 他タスクの .orig.md は従来どおり deny（allow で抜けない）
+        other = "projects/acme/tasks/20200101_other"
+        self.assertEqual(
+            self.hook("Read", {"file_path": str(self.root / other / "references/x.orig.md")}), "deny")
+
+    def test_ref_split_keeps_headings_inside_original_text(self):
+        """Web ページの本文には「## 見出し」が入る。原文節は最後の節なので末尾まで丸ごと移す。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        old = task / "references" / "20260101_0000_web.md"
+        body = "前置き\n\n## 本文の見出し 1\n段落 A\n\n## 本文の見出し 2\n段落 B\n"
+        old.write_text(
+            '---\ntitle: "web"\nkind: web\nsource: "https://example.org/"\nvia: jina\n'
+            'retrieved_at: 2026-01-01T00:00:00+09:00\nretrieved_by: unknown\nsummary: "s"\n---\n'
+            '# web\n\n## 引用した記述（原文のまま。要約しない）\n「段落 B」\n\n'
+            '## このタスクでの使いどころ（使わなかったなら理由）\n使った\n\n'
+            '## 原文（改変しない）\n' + body, encoding="utf-8")
+        self.ws("ref", "split", str(old))
+        orig = old.with_name("20260101_0000_web.orig.md")
+        self.assertEqual(orig.read_text(encoding="utf-8"), body)
+        front = old.read_text(encoding="utf-8")
+        self.assertNotIn("段落 A", front)  # 段落 B は「引用した記述」に引用として残る
+        self.assertIn("## 原文（改変しない）\n原文: [" + orig.name + "]", front)
 
 
 if __name__ == "__main__":
