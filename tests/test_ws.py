@@ -234,6 +234,23 @@ class WsFlowTest(unittest.TestCase):
         r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="x"), check=False)
         self.assertEqual(r.returncode, 0)
 
+    def test_docs_snapshots_are_off_limits_while_a_task_is_current(self):
+        """規則の根拠（Web ページの原文）は案件の仕事では読まない。台帳（docs/*.md）は読める。"""
+        snap = self.root / "docs/snapshots/20260101_0000_page.orig.md"
+        snap.parent.mkdir(parents=True)
+        snap.write_text("原文\n", encoding="utf-8")
+        ledger = self.root / "docs/sources.md"
+        ledger.write_text("台帳\n", encoding="utf-8")
+        self.assertIsNone(self.hook("Read", {"file_path": str(snap)}))  # タスク未設定なら読める
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        self.assertEqual(self.hook("Read", {"file_path": str(snap)}), "deny")
+        self.assertEqual(self.hook("Grep", {"pattern": "x", "path": "docs/snapshots"}), "deny")
+        self.assertEqual(self.hook("Bash", {"command": "cat docs/snapshots/20260101_0000_page.md"}), "deny")
+        self.assertIsNone(self.hook("Read", {"file_path": str(ledger)}))
+        # ref add --dir docs/snapshots（scripts/ws 自身の実行）は通す
+        self.assertIsNone(self.hook("Bash", {"command": "scripts/ws ref add https://example.org/ --dir docs/snapshots"}))
+
     def test_bench_is_off_limits_while_a_task_is_current(self):
         self.ws("project", "new", "acme")
         self.ws("task", "new", "acme", "kickoff")
@@ -631,6 +648,16 @@ class WsFlowTest(unittest.TestCase):
         self.assertTrue(front.with_name(front.stem + ".orig.md").is_file())
         self.assertIn(front.name, (task / "references/index.md").read_text(encoding="utf-8"))
         self.assertIn("保存:", out)
+        # .normalized.md / .summary.md を情報源にしても同じ（doctor がその reference を検査対象にする）
+        for name in ("n.normalized.md", "s.summary.md"):
+            (self.root / name).write_text("本文\n", encoding="utf-8")
+            self.ws("ref", "add", str(self.root / name), "--summary", "x")
+        fronts = sorted(p.name for p in (task / "references").glob("*.md")
+                        if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        self.assertEqual(len(fronts), 3, fronts)
+        self.assertTrue(all(n.endswith(("_orig.md", "_normalized.md", "_summary.md")) for n in fronts), fronts)
+        r = self.ws("doctor", check=False)
+        self.assertEqual(r.stdout.count("「引用した記述」節が未記入のまま"), 3, r.stdout)
 
     def test_pre_tool_use_reads_back_grep_old_format_and_relative_paths(self):
         """Grep も読み替える。旧形式（.orig.md 無し・.normalized.md あり）と相対パスでも効く。"""

@@ -25,6 +25,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
      `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
 
 `projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
+`docs/snapshots/`（規則の根拠にした Web ページの原文。約 1.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/*.md`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
 
@@ -116,7 +117,7 @@ agent-ws/
 ### hooks が止めるもの
 
 `scripts/ws hook pre-tool-use` が、ツールの入力（読むパス・grep の対象・シェルのコマンド）に「現在のタスク以外の `projects/*/tasks/*/`」が含まれていたら拒否し、理由として `knowledges/` を案内します。
-`tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。
+`tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
 Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` から同じスクリプトを呼びます。
 起動時の案内（SessionStart）は JSON の `additionalContext` で返します。Claude Code は素のテキストでも文脈に足しますが、Codex CLI は JSON でないと文脈に載りません（0.153.4 で確認）。
 
