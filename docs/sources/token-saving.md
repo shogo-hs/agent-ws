@@ -1,6 +1,6 @@
 # トークン節約 5 点の根拠
 
-AGENTS.md「compact するときに残すもの」、README「セッションの切り方」「1 時間以上空いたあとの 1 通目を止める」、transcript-ingest の fork 化、reference の要点と原文の分離、正規化版への読み替え hook（kanban T-0NG9F）の根拠。
+AGENTS.md「compact するときに残すもの」、README「セッションの切り方」「1 時間以上空いたあとの 1 通目を止める」、transcript-ingest の fork 化、reference の要点と原文の分離、正規化版への読み替え hook（kanban T-0NG9F）、および第 6 弾（SessionStart で index.md の全文を注入してターンを減らす・横断検索の拒否・同じ source の重複取得の検出・statusLine。kanban T-G6KJ5）の根拠。
 各行のファイルに取得日時・引用・原文（`.orig.md`）がある。ページは書き換わるので、規則を見直すときは再取得して差分を見る。
 
 | # | 出典（題名と URL） | 取得日時 | via | ファイル | 支えている規則 |
@@ -12,6 +12,15 @@ AGENTS.md「compact するときに残すもの」、README「セッションの
 | 5 | Prompt caching (OpenAI API) — https://developers.openai.com/api/docs/guides/prompt-caching | 2026-09-06T15:51:19+09:00 | jina | [docs/snapshots/20260906_1551_Prompt_caching_OpenAI_API.md](../snapshots/20260906_1551_Prompt_caching_OpenAI_API.md) | Codex の hook に --ttl 30（GPT-5.6 以降の最小寿命 30 分） |
 | 6 | Configuration Reference (Codex) — https://learn.chatgpt.com/docs/config-file/config-reference | 2026-09-06T15:51:19+09:00 | jina | [docs/snapshots/20260906_1551_Configuration_Reference_ChatGPT_Learn.md](../snapshots/20260906_1551_Configuration_Reference_ChatGPT_Learn.md) | compact_prompt を使わない理由（要約プロンプトの全文上書き） |
 | 7 | Hooks (Codex) — https://learn.chatgpt.com/docs/hooks | 2026-09-06T15:51:22+09:00 | jina | [docs/snapshots/20260906_1551_Hooks_ChatGPT_Learn.md](../snapshots/20260906_1551_Hooks_ChatGPT_Learn.md) | PreToolUse の updatedInput（Codex でも同じ形で書き換え可）、hosted の WebSearch に hook が無い |
+| 8 | Hooks reference - Claude Code Docs — https://code.claude.com/docs/en/hooks | 2026-09-06T17:31:32+09:00 | jina | [docs/snapshots/20260906_1731_Hooks_reference_-_Claude_Code_Docs.md](../snapshots/20260906_1731_Hooks_reference_-_Claude_Code_Docs.md) | SessionStart の注入上限 6,000 字（hook 出力は 10,000 字で切られる）／PostToolUse の updatedToolOutput は使わない |
+| 9 | Customize your status line - Claude Code Docs — https://code.claude.com/docs/en/statusline | 2026-09-06T17:31:46+09:00 | jina | [docs/snapshots/20260906_1731_Customize_your_status_line_-_Claude_Code.md](../snapshots/20260906_1731_Customize_your_status_line_-_Claude_Code.md) | scripts/ws statusline が読む項目（context_window.used_percentage・cost.total_cost_usd・session_id） |
+| 10 | Claude Code settings reference - Claude Code Docs — https://code.claude.com/docs/en/settings-reference | 2026-09-06T17:41:31+09:00 | jina | [docs/snapshots/20260906_1741_Claude_Code_settings_reference_-_Claude_.md](../snapshots/20260906_1741_Claude_Code_settings_reference_-_Claude_.md) | statusLine を project の .claude/settings.json に置く（Scope: Any file） |
+| 11 | Environment variables - Claude Code Docs — https://code.claude.com/docs/en/env-vars | 2026-09-06T17:41:27+09:00 | jina | [docs/snapshots/20260906_1741_Environment_variables_-_Claude_Code_Docs.md](../snapshots/20260906_1741_Environment_variables_-_Claude_Code_Docs.md) | README の従量課金向けの調整（CLAUDE_AUTOCOMPACT_PCT_OVERRIDE）／Bash 出力の上限は既にある |
+| 12 | Tools reference - Claude Code Docs — https://code.claude.com/docs/en/tools-reference | 2026-09-06T17:41:33+09:00 | jina | [docs/snapshots/20260906_1741_Tools_reference_-_Claude_Code_Docs.md](../snapshots/20260906_1741_Tools_reference_-_Claude_Code_Docs.md) | Read と Bash の出力上限は Claude Code 側に既にある（出力上限 hook を入れない） |
+| 13 | Non-interactive mode／ChatGPT Learn — https://learn.chatgpt.com/codex/non-interactive-mode | 2026-09-06T17:40:49+09:00 | jina | [docs/snapshots/20260906_1740_Non-interactive_mode_ChatGPT_Learn.md](../snapshots/20260906_1740_Non-interactive_mode_ChatGPT_Learn.md) | Codex は常時表示が無く /status か exec --json の usage で見る |
+| 14 | Pricing — https://docs.claude.com/en/docs/about-claude/pricing | 2026-09-06T17:50:10+09:00 | jina | [docs/snapshots/20260906_1750_Pricing.md](../snapshots/20260906_1750_Pricing.md) | 出力トークンは入力の 5 倍の単価／cache read は 0.1x（ターンごとの払い直しは無料ではない） |
+| 15 | rtk Claude Code Token Savings: A Skill Trial Benchmark — https://blog.jetbrains.com/ai/2026/07/rtk-claude-code-token-savings/ | 2026-09-06T17:44:40+09:00 | jina | [docs/snapshots/20260906_1744_rtk_Claude_Code_Token_Savings_A_Skill_Tr.md](../snapshots/20260906_1744_rtk_Claude_Code_Token_Savings_A_Skill_Tr.md) | 第三者の実測: Bash 出力の圧縮は読む量の 1/5 にしか効かず低 effort では増えた（JetBrains の報告。帰属） |
+| 16 | The Subagent Tax. Claude Code Fan-Outs Cost Up to 5.9x the Tokens, and Were Never Faster — https://systima.ai/blog/subagent-tax | 2026-09-06T17:42:28+09:00 | jina | [docs/snapshots/20260906_1742_The_Subagent_Tax._Claude_Code_Fan-Outs_C.md](../snapshots/20260906_1742_The_Subagent_Tax._Claude_Code_Fan-Outs_C.md) | 第三者の実測: サブエージェントは逐次の 2.6〜5.9 倍の入力（Systima の報告。帰属）→ 委譲の 4 条件を変えない |
 
 ## 再取得の手順
 

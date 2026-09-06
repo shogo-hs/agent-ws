@@ -25,7 +25,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
      `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
 
 `projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
-`docs/snapshots/`（規則の根拠にした Web ページの原文。約 1.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
+`docs/snapshots/`（規則の根拠にした Web ページの原文。約 2.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
 
@@ -56,6 +56,7 @@ Claude Code では `/clear` の前に `/rename <タスク名>` しておくと `
 モデルと reasoning effort はセッションの最初に決めます。途中で変えると、そこから会話全体のキャッシュが作り直しになります。
 試行が失敗したら訂正で続けず `/rewind`（Esc 2 回）で戻ってから言い直します。戻った先までの会話はキャッシュ済みです。
 `/usage` の「Prompt cache (main)」行（Claude Code 2.1.251 以降）で、直近のキャッシュ miss の回数と warm/cold を確認できます。
+従量課金で 1 セッションが長くなるなら、自動 compact を早める調整ノブがあります（Claude Code は環境変数 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`、Codex は `model_auto_compact_token_limit`）。index.md に現在地が残っているので早めの compact に耐えますが、compact 自体の費用との損益分岐は測っていないので agent-ws の既定は変えていません。
 
 ### 人が直接コマンドを叩きたいとき
 
@@ -113,14 +114,28 @@ agent-ws/
 ### エージェントが読む順番
 
 1. `AGENTS.md`（60 行以内の規約。起動時に自動で読まれる）
-2. hook が差し込む「現在のタスク」、案件の `index.md` の「この案件での決まりごと」、タスクの `index.md` の「次の一手」、`LESSONS.md` の全行
-3. タスクの `index.md`（目的・進め方・現在地・情報源の一覧）
-4. 案件の `knowledges/index.md`。必要なナレッジと用語集だけを開く
+2. hook が差し込む「現在のタスク」、案件の `index.md` の「この案件での決まりごと」、案件の `knowledges/index.md` の一覧、タスクの `index.md` の全文、`LESSONS.md` の全行
+3. 必要なナレッジと用語集だけを開く（一覧は 2 で渡されているので `knowledges/index.md` を読み直さない）
+
+### 起動時の注入でターンを減らす
+
+エージェントはターンごと（ツールを 1 回呼ぶごと）に会話全体を入力として送り直します。キャッシュが効いても課金はされ、bench では 1 ターンの入力が 32k トークン前後でした。
+一方で tool の結果そのものは 1 セッション合計で 2〜6 万字と小さく、処理した入力の 93〜95% はこの払い直しでした（bench の transcript の集計）。
+そこで SessionStart hook は、現在のタスクの `index.md` の全文と案件の `knowledges/index.md` の一覧を最初から文脈に入れます。再開のたびに `scripts/ws task current` → `Read index.md` → `Read knowledges/index.md` と 2〜3 ターン使っていた分が要らなくなります。
+注入は合計 6,000 字まで（Claude Code の hook 出力は 10,000 字で切られてファイル参照に化けるため）で、超える `index.md` は従来どおりパスと「次の一手」だけを示します。compact のあとも SessionStart(compact) で同じものが入るので、要約で消えた現在地は index.md から戻ります。
+Codex CLI は hook の注入が既定で約 2,500 トークンに切られるため、`.codex/hooks.json` の session-start に `additionalContextLimit: 8000` を付けています。
+同じ理由で AGENTS.md には「複数のファイルは 1 ターンでまとめて読む」「返答は結論・数字・置き場所だけ（出力トークンは入力の 5 倍の単価）」を置いています。
+
+### ステータスライン（Claude Code）
+
+`.claude/settings.json` の `statusLine` が `scripts/ws statusline` を呼び、画面の下に「現在のタスク | モデル | 文脈の使用率 | このセッションの費用（定価）」を常時出します。値は Claude Code が渡すもの（`context_window.used_percentage`・`cost.total_cost_usd`）をそのまま表示するだけで、トークンは使いません。
+文脈の使用率が上がってきたら `/compact`、タスクの切れ目なら `/clear` の頃合いです。自分の statusLine を使っているなら `.claude/settings.json` の `statusLine` を消してください（project の設定が user の設定より優先されます）。Codex CLI には同等の設定が無いので `/status` で見ます。
 
 ### hooks が止めるもの
 
 `scripts/ws hook pre-tool-use` が、ツールの入力（読むパス・grep の対象・シェルのコマンド）に「現在のタスク以外の `projects/*/tasks/*/`」が含まれていたら拒否し、理由として `knowledges/` を案内します。
-`tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
+`tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。
+`projects/`・案件直下・`tasks/` 直下を対象にした `find` / `ls` / `grep -r` / `rg` / `tree` と、パス指定の無い Grep / Glob も現在のタスクがある間は拒否します（他タスクの本文が結果に混ざり、読む導線としては `projects/index.md` と `tasks/index.md` で足りるため）。現在のタスクが無いとき（agent-ws 自体を直すとき）は止めません。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
 Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` から同じスクリプトを呼びます。
 起動時の案内（SessionStart）は JSON の `additionalContext` で返します。Claude Code は素のテキストでも文脈に足しますが、Codex CLI は JSON でないと文脈に載りません（0.153.4 で確認）。
 
@@ -140,7 +155,7 @@ Claude で API キーを直に叩いていてキャッシュが 5 分で切れ�
 
 各フォルダの `index.md` が入口です。`<!-- ws:index -->` と `<!-- /ws:index -->` の間は `scripts/ws` が自動で書き換え、その外側は手書きのまま残ります。
 タスクの `index.md` には `references/` の中身が直接並ぶので、情報源を探すのに 1 回で済みます。
-`ref add` は要点ファイル（`<name>.md`。frontmatter・引用した記述・使いどころ）と原文ファイル（`<name>.orig.md`。本文そのまま）の対で保存し、一覧には要点側だけが載ります。旧形式（1 ファイル）で残っている reference は `scripts/ws ref split <file>` で新形式に移行できます。
+`ref add` は要点ファイル（`<name>.md`。frontmatter・引用した記述・使いどころ）と原文ファイル（`<name>.orig.md`。本文そのまま）の対で保存し、一覧には要点側だけが載ります。同じ `source` の reference が既にあれば取得せずにそのパスを返します（同じページを 2 回撮って 2 回読まないため。撮り直すなら `--force`）。旧形式（1 ファイル）で残っている reference は `scripts/ws ref split <file>` で新形式に移行できます。
 
 ### 用語集
 
@@ -202,6 +217,16 @@ agent-ws は 1 セッション目が `scripts/ws` で残した index.md と refe
 | 導入前 | 8/8 × 5 回 | 0 | 2〜8 回 | 70k | 377k | 0.340 |
 
 資料の中身はどの条件でも同じ 8 項目を押さえていて、古い数字を前提に使った例もありません。差は読みに行く範囲で、agent-ws はナレッジ 3 本と現在のタスクだけを読み、仕組みなしは古いタスクの文字起こしまで開くので、処理した入力が 1.3〜1.6 倍、費用が 1.65 倍になります（A/B の p は処理した入力 0.016・費用 0.008）。
+
+**第 6 弾（起動時の注入・ターンを減らす規約・横断検索の拒否）の前後**（案件 8・Sonnet・各 5 回。前 = PR #6 まで、後 = このブランチ。処理した入力は中央値、p は 5 対 5 の並べ替え検定）
+
+| 実験 | 前 | 後 | p |
+|---|---|---|---|
+| 続きをやって（trap） | 749k・18 ターン | 224k・6 ターン | 0.048 |
+| 引き継ぎ 1 本目（新規タスク。注入の対象外） | 475k・12 ターン | 508k・13 ターン | 0.71 |
+| 引き継ぎ 2 本目（続きをやって） | 343k・9 ターン | 224k・6 ターン | 0.43（1 回だけ 1,141k・25 ターン。ナレッジ昇格後に `scripts/ws index` の挙動を確かめに scripts/ws を読み始めた） |
+
+「続きをやって」の前の値が上の表（246k）より大きいのは、PR #6 で入れた doctor の「引用した記述が未記入」の警告に従って、旧形式の reference を新形式へ作り替え始めたためです（5 回中 3 回、ターン 18〜23）。第 6 弾で最初期の形式（「## 要点」だけ）は検査しないようにしました。PR #5 時点の値（254k・7 ターン）と比べると 224k・6 ターンで、差は誤差の範囲です（p = 0.38）。正誤はどの条件も 5/5 で変わりません。
 
 **効かなかった場面・測っていないこと**
 

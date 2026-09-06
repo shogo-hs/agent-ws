@@ -1,7 +1,7 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook session-start", "timeout": 10, "statusMessage": "agent-ws: loading current task" } ] }
+      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook session-start", "timeout": 10, "statusMessage": "agent-ws: loading current task", "additionalContextLimit": 8000 } ] }
     ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook user-prompt-submit --ttl 30", "timeout": 10 } ] }
