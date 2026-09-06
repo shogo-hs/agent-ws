@@ -26,7 +26,7 @@
 ## 捨てた案
 ## 影響
 
-根拠: docs/*-sources.md の行（#N）・kanban T-XXXXX・設計書 D-XXXXX
+根拠: docs/sources/<name>.md の行（#N）・kanban T-XXXXX・設計書 D-XXXXX
 ```
 
 番号は連番。既存の ADR は書き換えず、決めを変えるときは新しい番号で置き換える（元の状態欄を「NNNN で置き換え」にする）。

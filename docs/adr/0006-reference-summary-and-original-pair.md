@@ -14,4 +14,4 @@ Claude Code は compact 後に直近 5 ファイルを再読するが、5,000 �
 ## 影響
 1 情報源が 2 ファイルになる。情報源そのものが `.orig.md` という名前のときは接尾辞を付け替える。原文を読むのは引用の実在を確かめるときだけ。
 
-根拠: `docs/token-saving-sources.md` #1・kanban T-0NG9F・T-4ZFES・設計書 D-X26K2（2 節の表・採らなかった案）・D-GAD0W（採らなかった案の表）
+根拠: `docs/sources/token-saving.md` #1・kanban T-0NG9F・T-4ZFES・設計書 D-X26K2（2 節の表・採らなかった案）・D-GAD0W（採らなかった案の表）

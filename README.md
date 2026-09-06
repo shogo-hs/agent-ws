@@ -25,7 +25,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
      `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
 
 `projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
-`docs/snapshots/`（規則の根拠にした Web ページの原文。約 1.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/*.md`）は残しておくと、規則の数字の出所が分かります。
+`docs/snapshots/`（規則の根拠にした Web ページの原文。約 1.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
 
@@ -102,7 +102,7 @@ agent-ws/
 │               └── references/   集めた情報（要点 .md と原文 .orig.md の対、文字起こしは正規化版 .normalized.md と要点 .summary.md も）
 ├── docs/                  agent-ws 自体の設計判断と規則の根拠（案件の仕事では読まない）
 │   ├── adr/               設計判断の記録（決定と理由・捨てた案。1 本 20 行以内）
-│   ├── *-sources.md       規則の根拠台帳（委譲規則・トークン節約の 5 点。URL・取得日時）
+│   ├── sources/           規則の根拠台帳（委譲規則・トークン節約の 5 点。URL・取得日時・支えている規則）
 │   └── snapshots/         出典ページの原文（要点 .md と原文 .orig.md の対）
 ├── tests/test_ws.py       scripts/ws の自己チェック
 └── .ws/                   （git 管理外）最後に設定したタスク（current）と、セッションごとの現在のタスクの写し・最終応答時刻

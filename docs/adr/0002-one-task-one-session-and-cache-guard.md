@@ -14,4 +14,4 @@ Claude のサブスクリプションはキャッシュが 1 時間、API キー
 ## 影響
 続けたい 1 通が止まることがある（同じ内容を 10 分以内に再送すれば通る）。切れてほしくない環境は `promptCacheTtl: "1h"`（Claude Code 2.1.242 以降）で延ばせるが書き込み単価は上がる。`.codex/hooks.json` を変えたので Codex は `/hooks` で trust し直す。
 
-根拠: `docs/token-saving-sources.md` #4・#5・kanban T-SKSDN・T-0NG9F・設計書 D-SETHW（4 節の実機確認・採らなかった案の表）・D-X26K2
+根拠: `docs/sources/token-saving.md` #4・#5・kanban T-SKSDN・T-0NG9F・設計書 D-SETHW（4 節の実機確認・採らなかった案の表）・D-X26K2
