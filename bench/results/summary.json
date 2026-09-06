@@ -1,6 +1,6 @@
 {
  "groups": {
-  "base/None/large/claude-haiku-4-5-20251001/A": {
+  "base/None/large/claude-haiku-4-5-20251001/A/False": {
    "in_total": [
     24462
    ],
@@ -28,6 +28,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -41,7 +44,7 @@
     null
    ]
   },
-  "base/None/large/claude-haiku-4-5-20251001/B": {
+  "base/None/large/claude-haiku-4-5-20251001/B/False": {
    "in_total": [
     21849
    ],
@@ -69,6 +72,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -82,7 +88,7 @@
     null
    ]
   },
-  "base/None/large/claude-haiku-4-5-20251001/C": {
+  "base/None/large/claude-haiku-4-5-20251001/C/False": {
    "in_total": [
     21849
    ],
@@ -110,6 +116,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -123,7 +132,7 @@
     null
    ]
   },
-  "base/None/large/claude-sonnet-5/A": {
+  "base/None/large/claude-sonnet-5/A/False": {
    "in_total": [
     32039
    ],
@@ -151,6 +160,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -164,7 +176,7 @@
     null
    ]
   },
-  "base/None/large/claude-sonnet-5/B": {
+  "base/None/large/claude-sonnet-5/B/False": {
    "in_total": [
     29182
    ],
@@ -192,6 +204,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -205,7 +220,7 @@
     null
    ]
   },
-  "base/None/large/claude-sonnet-5/C": {
+  "base/None/large/claude-sonnet-5/C/False": {
    "in_total": [
     29182
    ],
@@ -233,6 +248,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -246,7 +264,7 @@
     null
    ]
   },
-  "base/None/small/claude-sonnet-5/A": {
+  "base/None/small/claude-sonnet-5/A/False": {
    "in_total": [
     32039
    ],
@@ -274,6 +292,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -287,7 +308,7 @@
     null
    ]
   },
-  "base/None/small/claude-sonnet-5/B": {
+  "base/None/small/claude-sonnet-5/B/False": {
    "in_total": [
     29182
    ],
@@ -315,6 +336,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -328,7 +352,7 @@
     null
    ]
   },
-  "base/None/small/claude-sonnet-5/C": {
+  "base/None/small/claude-sonnet-5/C/False": {
    "in_total": [
     29182
    ],
@@ -356,6 +380,9 @@
    "denied": [
     0
    ],
+   "delegates": [
+    null
+   ],
    "verdict": [
     "none"
    ],
@@ -369,7 +396,7 @@
     null
    ]
   },
-  "chain/1/large/claude-sonnet-5/A": {
+  "chain/1/large/claude-sonnet-5/A/False": {
    "in_total": [
     360116,
     447756,
@@ -433,6 +460,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -462,7 +496,7 @@
     null
    ]
   },
-  "chain/1/large/claude-sonnet-5/B": {
+  "chain/1/large/claude-sonnet-5/B/False": {
    "in_total": [
     610686,
     505451,
@@ -526,6 +560,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -555,7 +596,7 @@
     null
    ]
   },
-  "chain/1/large/claude-sonnet-5/C": {
+  "chain/1/large/claude-sonnet-5/C/False": {
    "in_total": [
     471063,
     394492,
@@ -619,6 +660,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -648,7 +696,7 @@
     null
    ]
   },
-  "chain/2/large/claude-sonnet-5/A": {
+  "chain/2/large/claude-sonnet-5/A/False": {
    "in_total": [
     319219,
     324568,
@@ -712,6 +760,13 @@
     0,
     1
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "correct",
     "correct",
@@ -741,7 +796,7 @@
     null
    ]
   },
-  "chain/2/large/claude-sonnet-5/B": {
+  "chain/2/large/claude-sonnet-5/B/False": {
    "in_total": [
     942720,
     701017,
@@ -805,6 +860,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "correct",
     "correct",
@@ -834,7 +896,7 @@
     null
    ]
   },
-  "chain/2/large/claude-sonnet-5/C": {
+  "chain/2/large/claude-sonnet-5/C/False": {
    "in_total": [
     567511,
     460392,
@@ -898,6 +960,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "correct",
     "correct",
@@ -927,7 +996,7 @@
     null
    ]
   },
-  "newtask/None/large/claude-sonnet-5/A": {
+  "newtask/None/large/claude-sonnet-5/A/False": {
    "in_total": [
     342265,
     328416,
@@ -991,6 +1060,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     null,
     null,
@@ -1020,7 +1096,7 @@
     "new_task"
    ]
   },
-  "newtask/None/large/claude-sonnet-5/B": {
+  "newtask/None/large/claude-sonnet-5/B/False": {
    "in_total": [
     481185,
     530259,
@@ -1084,6 +1160,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     null,
     null,
@@ -1113,7 +1196,7 @@
     "new_task"
    ]
   },
-  "newtask/None/large/claude-sonnet-5/C": {
+  "newtask/None/large/claude-sonnet-5/C/False": {
    "in_total": [
     273106,
     377272,
@@ -1177,6 +1260,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     null,
     null,
@@ -1206,7 +1296,7 @@
     "project_dir"
    ]
   },
-  "trap/None/large/claude-haiku-4-5-20251001/A": {
+  "trap/None/large/claude-haiku-4-5-20251001/A/False": {
    "in_total": [
     164138,
     107659,
@@ -1270,6 +1360,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "correct",
     "correct",
@@ -1299,7 +1396,7 @@
     null
    ]
   },
-  "trap/None/large/claude-haiku-4-5-20251001/B": {
+  "trap/None/large/claude-haiku-4-5-20251001/B/False": {
    "in_total": [
     21858,
     21858,
@@ -1363,6 +1460,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -1392,7 +1496,7 @@
     null
    ]
   },
-  "trap/None/large/claude-haiku-4-5-20251001/C": {
+  "trap/None/large/claude-haiku-4-5-20251001/C/False": {
    "in_total": [
     21858,
     21858,
@@ -1456,6 +1560,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -1485,33 +1596,53 @@
     null
    ]
   },
-  "trap/None/large/claude-sonnet-5/A": {
+  "trap/None/large/claude-sonnet-5/A/False": {
    "in_total": [
     205620,
     241660,
     241979,
     318571,
-    242553
+    242553,
+    248819,
+    292145,
+    210369,
+    256594,
+    250540
    ],
    "ctx_final": [
     37969,
     37758,
     37879,
     38871,
-    38186
+    38186,
+    39294,
+    40388,
+    38661,
+    40865,
+    40089
    ],
    "cost_usd": [
     0.13715819999999998,
     0.139648,
     0.1408516,
     0.1661768,
-    0.143353
+    0.143353,
+    0.1509266,
+    0.1729926,
+    0.13859760000000002,
+    0.16761140000000002,
+    0.16463180000000002
    ],
    "turns": [
     6,
     7,
     7,
     9,
+    7,
+    7,
+    8,
+    6,
+    7,
     7
    ],
    "reads": [
@@ -1519,13 +1650,163 @@
     4,
     4,
     5,
-    5
+    5,
+    4,
+    4,
+    4,
+    5,
+    4
    ],
    "searches": [
     0,
     0,
     0,
     1,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-sonnet-5/A/True": {
+   "in_total": [
+    250688,
+    257898,
+    292194,
+    253370,
+    254270
+   ],
+   "ctx_final": [
+    40087,
+    40787,
+    39689,
+    39274,
+    39539
+   ],
+   "cost_usd": [
+    0.1656338,
+    0.1759358,
+    0.1614962,
+    0.1502408,
+    0.1541378
+   ],
+   "turns": [
+    7,
+    7,
+    8,
+    7,
+    7
+   ],
+   "reads": [
+    4,
+    5,
+    5,
+    5,
+    4
+   ],
+   "searches": [
+    0,
+    0,
+    1,
+    0,
     0
    ],
    "other_task": [
@@ -1543,6 +1824,13 @@
     0
    ],
    "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
     0,
     0,
     0,
@@ -1578,7 +1866,7 @@
     null
    ]
   },
-  "trap/None/large/claude-sonnet-5/B": {
+  "trap/None/large/claude-sonnet-5/B/False": {
    "in_total": [
     59159,
     213276,
@@ -1642,6 +1930,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -1671,7 +1966,7 @@
     null
    ]
   },
-  "trap/None/large/claude-sonnet-5/C": {
+  "trap/None/large/claude-sonnet-5/C/False": {
    "in_total": [
     132003,
     132989,
@@ -1735,6 +2030,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -1764,7 +2066,7 @@
     null
    ]
   },
-  "trap/None/small/claude-sonnet-5/A": {
+  "trap/None/small/claude-sonnet-5/A/False": {
    "in_total": [
     280852,
     172396,
@@ -1828,6 +2130,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "correct",
     "correct",
@@ -1857,7 +2166,7 @@
     null
    ]
   },
-  "trap/None/small/claude-sonnet-5/B": {
+  "trap/None/small/claude-sonnet-5/B/False": {
    "in_total": [
     318714,
     329075,
@@ -1921,6 +2230,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "correct",
     "correct",
@@ -1950,7 +2266,7 @@
     null
    ]
   },
-  "trap/None/small/claude-sonnet-5/C": {
+  "trap/None/small/claude-sonnet-5/C/False": {
    "in_total": [
     58734,
     246525,
@@ -2014,6 +2330,13 @@
     0,
     0
    ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
    "verdict": [
     "none",
     "none",
@@ -2045,92 +2368,92 @@
   }
  },
  "pairs": {
-  "base/None/large/claude-haiku-4-5-20251001/A-B": {
+  "base/None/large/claude-haiku-4-5-20251001/False/A-B": {
    "in_total": null,
    "cost_usd": null,
    "other_task": null
   },
-  "base/None/large/claude-haiku-4-5-20251001/A-C": {
+  "base/None/large/claude-haiku-4-5-20251001/False/A-C": {
    "in_total": null,
    "cost_usd": null,
    "other_task": null
   },
-  "base/None/large/claude-sonnet-5/A-B": {
+  "base/None/large/claude-sonnet-5/False/A-B": {
    "in_total": null,
    "cost_usd": null,
    "other_task": null
   },
-  "base/None/large/claude-sonnet-5/A-C": {
+  "base/None/large/claude-sonnet-5/False/A-C": {
    "in_total": null,
    "cost_usd": null,
    "other_task": null
   },
-  "base/None/small/claude-sonnet-5/A-B": {
+  "base/None/small/claude-sonnet-5/False/A-B": {
    "in_total": null,
    "cost_usd": null,
    "other_task": null
   },
-  "base/None/small/claude-sonnet-5/A-C": {
+  "base/None/small/claude-sonnet-5/False/A-C": {
    "in_total": null,
    "cost_usd": null,
    "other_task": null
   },
-  "chain/1/large/claude-sonnet-5/A-B": {
+  "chain/1/large/claude-sonnet-5/False/A-B": {
    "in_total": 0.031746031746031744,
    "cost_usd": 0.007936507936507936,
    "other_task": 0.007936507936507936
   },
-  "chain/1/large/claude-sonnet-5/A-C": {
+  "chain/1/large/claude-sonnet-5/False/A-C": {
    "in_total": 0.1984126984126984,
    "cost_usd": 0.007936507936507936,
    "other_task": 0.007936507936507936
   },
-  "chain/2/large/claude-sonnet-5/A-B": {
+  "chain/2/large/claude-sonnet-5/False/A-B": {
    "in_total": 0.007936507936507936,
    "cost_usd": 0.007936507936507936,
    "other_task": 0.007936507936507936
   },
-  "chain/2/large/claude-sonnet-5/A-C": {
+  "chain/2/large/claude-sonnet-5/False/A-C": {
    "in_total": 0.7301587301587301,
    "cost_usd": 0.1984126984126984,
    "other_task": 0.4444444444444444
   },
-  "newtask/None/large/claude-sonnet-5/A-B": {
+  "newtask/None/large/claude-sonnet-5/False/A-B": {
    "in_total": 0.015873015873015872,
    "cost_usd": 0.007936507936507936,
    "other_task": 0.047619047619047616
   },
-  "newtask/None/large/claude-sonnet-5/A-C": {
+  "newtask/None/large/claude-sonnet-5/False/A-C": {
    "in_total": 0.12698412698412698,
    "cost_usd": 0.007936507936507936,
    "other_task": 0.007936507936507936
   },
-  "trap/None/large/claude-haiku-4-5-20251001/A-B": {
+  "trap/None/large/claude-haiku-4-5-20251001/False/A-B": {
    "in_total": 0.007936507936507936,
    "cost_usd": 0.007936507936507936,
    "other_task": 1.0
   },
-  "trap/None/large/claude-haiku-4-5-20251001/A-C": {
+  "trap/None/large/claude-haiku-4-5-20251001/False/A-C": {
    "in_total": 0.007936507936507936,
    "cost_usd": 0.007936507936507936,
    "other_task": 1.0
   },
-  "trap/None/large/claude-sonnet-5/A-B": {
-   "in_total": 0.2857142857142857,
-   "cost_usd": 0.9682539682539683,
-   "other_task": 0.4444444444444444
+  "trap/None/large/claude-sonnet-5/False/A-B": {
+   "in_total": 0.11421911421911422,
+   "cost_usd": 0.701964701964702,
+   "other_task": 0.09523809523809523
   },
-  "trap/None/large/claude-sonnet-5/A-C": {
-   "in_total": 0.007936507936507936,
-   "cost_usd": 0.03968253968253968,
+  "trap/None/large/claude-sonnet-5/False/A-C": {
+   "in_total": 0.000333000333000333,
+   "cost_usd": 0.002664002664002664,
    "other_task": 1.0
   },
-  "trap/None/small/claude-sonnet-5/A-B": {
+  "trap/None/small/claude-sonnet-5/False/A-B": {
    "in_total": 0.9206349206349206,
    "cost_usd": 0.46825396825396826,
    "other_task": 0.4444444444444444
   },
-  "trap/None/small/claude-sonnet-5/A-C": {
+  "trap/None/small/claude-sonnet-5/False/A-C": {
    "in_total": 0.023809523809523808,
    "cost_usd": 0.1111111111111111,
    "other_task": 1.0

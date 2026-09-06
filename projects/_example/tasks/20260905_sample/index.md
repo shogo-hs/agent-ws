@@ -25,8 +25,8 @@ summary: "2026-09-02 の週次定例の文字起こしを用語集で直し、�
 正規化版（*.normalized.md）から宿題を「誰が・何を・いつまでに」の表にして、この下に書く。
 
 ## 参照したナレッジ
-- knowledges/glossary.md — 週次定例・Kubernetes・PoC・山田太郎の表記
-- knowledges/001_移行方針.md — 移行先と PoC の位置づけ
+- knowledges/glossary.md（updated 2026-09-05）: 週次定例・Kubernetes・PoC・山田太郎の表記
+- knowledges/001_移行方針.md（updated 2026-09-05）: 移行先と PoC の位置づけ
 
 ## 未確定の用語
 - 「ディービー」— 文脈から DB（データベース）と思われるが、どの DB かは不明。用語集に足す前に佐藤さんに確認する。

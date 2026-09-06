@@ -16,5 +16,6 @@ run --exp trap    --scale large --model sonnet -n 5
 run --exp newtask --scale large --model sonnet -n 5
 run --exp chain   --scale large --model sonnet -n 5
 run --exp trap    --scale large --model haiku  -n 5
+run --exp trap    --scale large --model sonnet -n 5 --delegate
 $PY bench/run.py summary
 $PY bench/run.py fig

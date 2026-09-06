@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
@@ -28,7 +29,8 @@ IDX_BEGIN = "<!-- ws:index -->"
 IDX_END = "<!-- /ws:index -->"
 # projects/<案件>/tasks/<タスク> をツール入力のどこからでも拾う
 TASK_RE = re.compile(r"projects/([^/\s\"'`<>]+)/tasks/([^/\s\"'`<>]+)")
-MAX_BODY = 200_000
+# 「参照したナレッジ」の 1 行: - knowledges/<file>（updated YYYY-MM-DD）: 使った要点
+KNOW_REF_RE = re.compile(r"^-\s*knowledges/(\S+?)（updated (\d{4}-\d{2}-\d{2})）", re.M)
 LONG_TEXT = 10_000  # これを超える文字起こしは範囲を分けて読ませる
 REF_KINDS = ("web", "file", "transcript", "chat", "person")
 # 前回の応答からこの分数以上空いていたら、次の 1 通を止めて /clear を勧める
@@ -312,7 +314,14 @@ class _TextExtractor(HTMLParser):
         return re.sub(r"\n\s*\n+", "\n\n", t).strip()
 
 
-def fetch(url: str) -> tuple[str, str]:
+def _is_local_host(url: str) -> bool:
+    """localhost・プライベート網の URL は r.jina.ai に投げても届かないので直接取得だけにする。"""
+    host = urllib.parse.urlsplit(url).hostname or ""
+    return host in ("localhost", "127.0.0.1", "::1") or bool(
+        re.match(r"^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.", host))
+
+
+def _fetch_direct(url: str) -> tuple[str, str]:
     req = urllib.request.Request(url, headers={"User-Agent": "agent-ws/0.1 (+scripts/ws ref add)"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -328,13 +337,42 @@ def fetch(url: str) -> tuple[str, str]:
     return "", body
 
 
+def fetch(url: str) -> tuple[str, str, str]:
+    """本文を取る。r.jina.ai を第一選択にし、JS 描画・Cloudflare 保護のページでも本文を残す。
+    500 バイト未満、または本文がエラー応答（error / {"code" で始まる）なら直接取得に落ちる。
+    戻り値の経路（"jina" / "direct"）は reference の frontmatter に via として残す。
+    """
+    if not os.environ.get("WS_NO_JINA") and not _is_local_host(url):
+        try:
+            req = urllib.request.Request(f"https://r.jina.ai/{url}",
+                                          headers={"User-Agent": "agent-ws/0.1 (+scripts/ws ref add)"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                raw = r.read()
+            if len(raw) >= 500 and not raw.startswith((b"error", b'{"code"')):
+                body = raw.decode("utf-8", errors="replace")
+                first = body.split("\n", 1)[0]
+                title = first[len("Title:"):].strip() if first.startswith("Title:") else ""
+                return title, body, "jina"
+        except Exception:  # noqa: BLE001 — jina が失敗したら直接取得へ
+            pass
+    title, body = _fetch_direct(url)
+    return title, body, "direct"
+
+
 def cmd_ref_add(args):
-    task = current_task(session_id())
-    if not task:
-        die("現在のタスクが無い。scripts/ws task new か task use で設定する")
+    if args.dir:
+        dest_dir = Path(args.dir)
+        dest_dir = dest_dir if dest_dir.is_absolute() else ROOT / dest_dir
+        task = None
+    else:
+        task = current_task(session_id())
+        if not task:
+            die("現在のタスクが無い。scripts/ws task new か task use で設定するか --dir <path> を使う")
+        dest_dir = task / "references"
     src = args.source
+    via = "local"
     if re.match(r"https?://", src):
-        title, body = fetch(src)
+        title, body, via = fetch(src)
         kind = args.kind or "web"
     else:
         f = Path(src)
@@ -344,18 +382,20 @@ def cmd_ref_add(args):
         kind = args.kind or "file"
         src = rel(f) if f.resolve().is_relative_to(ROOT) else str(f.resolve())
     title = args.title or title or src
-    if len(body) > MAX_BODY:
-        body = body[:MAX_BODY] + f"\n\n（ws: {MAX_BODY:,} 文字で打ち切った。全文は source を見る）"
-    dest = task / "references" / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
+    dest = dest_dir / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
     if dest.exists():
         dest = dest.with_name(dest.stem + f"_{now():%S}.md")
-    write(dest, render(TEMPLATES / "reference.md", title=title, kind=kind, source=src,
+    write(dest, render(TEMPLATES / "reference.md", title=title, kind=kind, source=src, via=via,
                        retrieved_at=now().isoformat(timespec="seconds"),
                        retrieved_by=os.environ.get("WS_AGENT", "unknown"),
-                       summary=args.summary, body=body))
-    update_index(task / "references")
-    update_index(task)
-    print(f"保存: {rel(dest)}")
+                       summary=args.summary or "", body=body))
+    if task:
+        update_index(task / "references")
+        update_index(task)
+    shown = rel(dest) if dest.resolve().is_relative_to(ROOT) else str(dest.resolve())
+    print(f"保存: {shown}")
+    if not args.summary:
+        print("summary が空。読んだら summary・「引用した記述」・「このタスクでの使いどころ」を埋める")
 
 
 # ---- 用語集と文字起こし ----------------------------------------------------
@@ -506,7 +546,7 @@ def cmd_doctor(args):
             if not idx.exists():
                 problems.append(f"{rel(t)}/index.md が無い")
                 continue
-            meta, _ = read_frontmatter(idx)
+            meta, body = read_frontmatter(idx)
             if not meta.get("status"):
                 problems.append(f"{rel(idx)}: frontmatter の status が無い")
             refs = t / "references"
@@ -514,6 +554,25 @@ def cmd_doctor(args):
                 problems.append(f"{rel(t)}/references/ が無い")
             elif meta.get("status") == "doing" and not [p for p in refs.glob("*.md") if p.name != "index.md"]:
                 problems.append(f"{rel(t)}: references/ が空（情報源を記録していない）")
+            if meta.get("status") != "doing":
+                continue
+            for rf in (refs.glob("*.md") if refs.is_dir() else []):
+                if rf.name == "index.md":
+                    continue
+                rmeta, rbody = read_frontmatter(rf)
+                if not _section_raw(rbody, "原文（改変しない）").strip():
+                    problems.append(f"{rel(rf)}: 「原文（改変しない）」節が空")
+                quote = _section_raw(rbody, "引用した記述（原文のまま。要約しない）").strip()
+                if not quote or (quote.startswith("（") and quote.endswith("）")):
+                    problems.append(f"{rel(rf)}: 「引用した記述」節が未記入のまま")
+                if not rmeta.get("summary"):
+                    problems.append(f"{rel(rf)}: frontmatter の summary が空")
+            for kfile, ref_date in KNOW_REF_RE.findall(_section_raw(body, "参照したナレッジ")):
+                kpath = proj / "knowledges" / kfile
+                actual = read_frontmatter(kpath)[0].get("updated") if kpath.exists() else None
+                if actual and actual > ref_date:
+                    problems.append(f"{rel(idx)}: 参照したナレッジ knowledges/{kfile} は記録（updated {ref_date}）"
+                                     f"より新しい（参照後に更新された。現在 updated {actual}）")
     for p in problems:
         print("- " + p)
     print("問題なし" if not problems else f"{len(problems)} 件")
@@ -529,9 +588,14 @@ def _stdin_json() -> dict:
         return {}
 
 
-def _section(body: str, name: str, limit: int = 300) -> str:
+def _section_raw(body: str, name: str) -> str:
+    """「## name」節の生テキスト（改行つき）。無ければ空文字。"""
     m = re.search(rf"^##\s+{re.escape(name)}\s*\n(.*?)(?=^##\s|\Z)", body, re.S | re.M)
-    text = " ".join(m.group(1).split()) if m else ""
+    return m.group(1) if m else ""
+
+
+def _section(body: str, name: str, limit: int = 300) -> str:
+    text = " ".join(_section_raw(body, name).split())
     return text[:limit] if text else "（未記入）"
 
 
@@ -619,11 +683,26 @@ def cmd_hook_session_start(args):
           f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
 
 
+def _deny(reason: str):
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
+    }}, ensure_ascii=False))
+
+
+def _ref_add_reason(url: str, tool_label: str) -> str:
+    return (f'[agent-ws] Web ページは{tool_label}で読まない（要約しか返らず原文が残らない）。'
+            f'代わりに次を実行して、保存されたファイルを読む: scripts/ws ref add {url} --summary "<1 文>"'
+            "（読んだら「引用した記述」「使いどころ」「summary」を埋める）")
+
+
 def cmd_hook_pre_tool_use(args):
     data = _stdin_json()
     tool = data.get("tool_name", "")
     sid = data.get("session_id")
-    blob = json.dumps(data.get("tool_input", {}), ensure_ascii=False)
+    tool_input = data.get("tool_input", {})
+    blob = json.dumps(tool_input, ensure_ascii=False)
     if tool in ("Bash", "shell") and "scripts/ws" in blob:
         m = sid and re.search(r"\btask\s+(use|new|done)\b", blob)
         if m:
@@ -634,20 +713,26 @@ def cmd_hook_pre_tool_use(args):
                 CURRENT.write_text(copy.read_text(encoding="utf-8"), encoding="utf-8")
             copy.unlink(missing_ok=True)
         return  # ws 自身によるタスク操作は通す
+    cur = current_task(sid)
+    if cur and tool == "WebFetch":
+        _deny(_ref_add_reason(tool_input.get("url", ""), "WebFetch"))
+        return
+    if cur and tool in ("Bash", "shell"):
+        cmd = tool_input.get("command", "")
+        if re.search(r"\b(curl|wget)\b", cmd):
+            m = re.search(r"https?://[^\s'\"]+", cmd)
+            if m and not _is_local_host(m.group(0)):
+                _deny(_ref_add_reason(m.group(0), "curl/wget"))
+                return
     # bench/ は計測用の架空の案件。仕事中（現在のタスクがある間）に読むと実案件と混ざり、トークンも無駄になる。
     # ROOT からの相対で見る（/var/tmp/agent-ws-bench/ のような外のパスには当てない）
-    if re.search(r"(?<![\w.-])bench/", blob.replace(str(ROOT) + "/", "")) and current_task(sid):
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": "[agent-ws] bench/ は計測用の架空の材料（案件・タスク・資料）。仕事では読まない。"
-                                        "agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。",
-        }}, ensure_ascii=False))
+    if re.search(r"(?<![\w.-])bench/", blob.replace(str(ROOT) + "/", "")) and cur:
+        _deny("[agent-ws] bench/ は計測用の架空の材料（案件・タスク・資料）。仕事では読まない。"
+              "agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。")
         return
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
     if not hits:
         return
-    cur = current_task(sid)
     cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
     others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
     if not others:
@@ -662,10 +747,31 @@ def cmd_hook_pre_tool_use(args):
         reason = (f"[agent-ws] 現在のタスクが未設定のまま tasks/ 配下にアクセスしない: {', '.join(others)}\n"
                   "着手するには scripts/ws task new <project> <slug>（新規）か "
                   f"scripts/ws task use {others[0]}（既存）。")
+    _deny(reason)
+
+
+def cmd_hook_post_tool_use(args):
+    """WebSearch の結果 URL を文脈に足す。読むなら ref add へ誘導する（WebFetch は pre-tool-use が止める）。"""
+    data = _stdin_json()
+    if data.get("tool_name") != "WebSearch" or not current_task(data.get("session_id")):
+        return
+    urls: list[str] = []
+    for item in (data.get("tool_response") or {}).get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        for c in item.get("content") or []:
+            if isinstance(c, dict) and c.get("url"):
+                urls.append(c["url"])
+            if len(urls) >= 10:
+                break
+        if len(urls) >= 10:
+            break
+    if not urls:
+        return
     print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": reason,
+        "hookEventName": "PostToolUse",
+        "additionalContext": "[agent-ws] 検索結果のページを読むなら scripts/ws ref add <URL> で（WebFetch は止まる）。"
+                              f"候補: {', '.join(urls)}",
     }}, ensure_ascii=False))
 
 
@@ -695,9 +801,10 @@ def main(argv=None):
     r = sub.add_parser("ref", help="情報源").add_subparsers(dest="sub", required=True)
     q = r.add_parser("add", help="URL かファイルを現在のタスクの references/ に保存する")
     q.add_argument("source", help="URL かファイルパス")
-    q.add_argument("--summary", required=True, help="1文の要約（index.md の一覧に出る）")
+    q.add_argument("--summary", help="1文の要約（index.md の一覧に出る）。省略すると空で保存し、後で埋める")
     q.add_argument("--title")
     q.add_argument("--kind", choices=REF_KINDS, help="省略時は URL なら web、ファイルなら file")
+    q.add_argument("--dir", help="現在のタスクを使わず、このディレクトリに reference を書く（例: docs/ の根拠台帳）")
     q.set_defaults(fn=cmd_ref_add)
 
     tr = sub.add_parser("transcript", help="文字起こし").add_subparsers(dest="sub", required=True)
@@ -736,6 +843,7 @@ def main(argv=None):
     h = sub.add_parser("hook", help="エージェントの hooks から呼ばれる（stdin に JSON）").add_subparsers(dest="sub", required=True)
     h.add_parser("session-start").set_defaults(fn=cmd_hook_session_start)
     h.add_parser("pre-tool-use").set_defaults(fn=cmd_hook_pre_tool_use)
+    h.add_parser("post-tool-use").set_defaults(fn=cmd_hook_post_tool_use)
     h.add_parser("user-prompt-submit").set_defaults(fn=cmd_hook_user_prompt_submit)
     h.add_parser("stop").set_defaults(fn=cmd_hook_stop)
 

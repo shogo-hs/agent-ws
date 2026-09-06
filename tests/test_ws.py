@@ -3,12 +3,15 @@
 一時ディレクトリを WS_ROOT にして、案件作成 → タスク作成 → hook の拒否/許可 →
 情報源の保存 → 用語集と正規化 → 完了 の一連を通す。
 """
+import http.server
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -243,6 +246,181 @@ class WsFlowTest(unittest.TestCase):
 
     def test_hook_is_fail_open_on_garbage(self):
         r = self.ws("hook", "pre-tool-use", stdin="not json")
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_ref_add_local_file_has_new_sections_and_via(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "kickoff")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        src = self.root / "note.txt"
+        src.write_text("メモ本文", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "メモ")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+        text = ref.read_text(encoding="utf-8")
+        self.assertIn("via: local", text)
+        self.assertIn("## 引用した記述（原文のまま。要約しない）", text)
+        self.assertIn("## このタスクでの使いどころ（使わなかったなら理由）", text)
+        self.assertIn("## 原文（改変しない）", text)
+        self.assertIn("メモ本文", text)
+
+    def test_ref_add_summary_optional(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "kickoff")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        src = self.root / "note.txt"
+        src.write_text("メモ", encoding="utf-8")
+        out = self.ws("ref", "add", str(src)).stdout  # --summary を省略
+        self.assertIn("summary が空", out)
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+        self.assertIn('summary: ""', ref.read_text(encoding="utf-8"))
+        # 後から埋められる（frontmatter を書き換えられる）
+        text = ref.read_text(encoding="utf-8").replace('summary: ""', 'summary: "後から埋めた"', 1)
+        ref.write_text(text, encoding="utf-8")
+        self.assertIn('summary: "後から埋めた"', ref.read_text(encoding="utf-8"))
+
+    def test_ref_add_dir_without_current_task(self):
+        self.ws("project", "new", "acme")  # 現在のタスクは設定しない
+        src = self.root / "note.txt"
+        src.write_text("根拠になる記述", encoding="utf-8")
+        out_dir = self.root / "docs"
+        self.ws("ref", "add", str(src), "--summary", "根拠メモ", "--dir", str(out_dir))
+        saved = next(out_dir.glob("*.md"))
+        self.assertIn("根拠になる記述", saved.read_text(encoding="utf-8"))
+
+    def test_doctor_flags_reference_gaps_and_stale_knowledge(self):
+        self.ws("project", "new", "acme")
+        self.ws("know", "new", "acme", "手順書")
+        kfile = next((self.root / "projects/acme/knowledges").glob("001_*.md"))
+        kfile.write_text(kfile.read_text(encoding="utf-8").replace(
+            'summary: ""', 'summary: "手順の要点"'), encoding="utf-8")
+        actual_updated = re.search(r"^updated: (.+)$", kfile.read_text(encoding="utf-8"), re.M).group(1).strip()
+        know_line_placeholder = ("（`- knowledges/<file>（updated YYYY-MM-DD）: 使った要点` の書式で 1 件 1 行。"
+                                  "updated はナレッジの frontmatter を参照した時点の値のまま書き写す。"
+                                  "doctor が古い記録を検出する）")
+
+        # クリーンなタスク: 3節・summary・ナレッジの記録日を全部埋めた → 何も警告されない
+        self.ws("task", "new", "acme", "clean")
+        clean_task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.name.endswith("_clean"))
+        src = self.root / "clean.txt"
+        src.write_text("クリーンな原文", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "クリーンな要約")
+        ref = next(p for p in (clean_task / "references").glob("*.md") if p.name != "index.md")
+        text = ref.read_text(encoding="utf-8")
+        text = text.replace("（このタスクに関係する記述を原文のまま引用する。複数あれば箇条書き）", "「原文からの引用」")
+        text = text.replace("（この記述をどう使ったか、使わなかったならその理由）", "このまま使った")
+        ref.write_text(text, encoding="utf-8")
+        idx = clean_task / "index.md"
+        idx.write_text(idx.read_text(encoding="utf-8").replace(
+            know_line_placeholder, f"- knowledges/{kfile.name}（updated {actual_updated}）: 手順の要点"),
+            encoding="utf-8")
+
+        # 乱れたタスク: 引用未記入・summary 空・原文空・古いナレッジ記録
+        self.ws("task", "new", "acme", "stale")
+        stale_task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.name.endswith("_stale"))
+        src2 = self.root / "stale.txt"
+        src2.write_text("乱れた原文", encoding="utf-8")
+        out = self.ws("ref", "add", str(src2)).stdout  # --summary を省略
+        self.assertIn("summary が空", out)
+        ref2 = next(p for p in (stale_task / "references").glob("*.md") if p.name != "index.md")
+        ref2.write_text(re.sub(r"(## 原文（改変しない）\n).*", r"\1", ref2.read_text(encoding="utf-8"), flags=re.S),
+                        encoding="utf-8")
+        idx2 = stale_task / "index.md"
+        idx2.write_text(idx2.read_text(encoding="utf-8").replace(
+            know_line_placeholder, f"- knowledges/{kfile.name}（updated 2020-01-01）: 古い記録"),
+            encoding="utf-8")
+
+        r = self.ws("doctor", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        ref2_rel = ref2.relative_to(self.root).as_posix()
+        idx2_rel = idx2.relative_to(self.root).as_posix()
+        self.assertIn(f"{ref2_rel}: 「原文（改変しない）」節が空", r.stdout)
+        self.assertIn(f"{ref2_rel}: 「引用した記述」節が未記入のまま", r.stdout)
+        self.assertIn(f"{ref2_rel}: frontmatter の summary が空", r.stdout)
+        self.assertIn(f"{idx2_rel}: 参照したナレッジ knowledges/{kfile.name} は記録（updated 2020-01-01）より新しい", r.stdout)
+        ref_rel = ref.relative_to(self.root).as_posix()
+        self.assertNotIn(f"{ref_rel}:", r.stdout)  # クリーンなタスクの reference には出ない
+
+    def test_fetch_direct_with_ws_no_jina(self):
+        page = b"<html><head><title>Sample Page</title></head><body><p>Hello agent-ws</p></body></html>"
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):  # noqa: D401 — テスト出力を静かにする
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(page)))
+                self.end_headers()
+                self.wfile.write(page)
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            self.ws("project", "new", "acme")
+            self.ws("task", "new", "acme", "t1")
+            task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+            self.ws("ref", "add", f"http://127.0.0.1:{port}/", "--summary", "s", env={"WS_NO_JINA": "1"})
+            ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md")
+            text = ref.read_text(encoding="utf-8")
+            self.assertIn("via: direct", text)
+            self.assertIn("Sample Page", text)
+            self.assertIn("Hello agent-ws", text)
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+    def test_hook_denies_webfetch_with_current_task(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        self.assertEqual(self.hook("WebFetch", {"url": "https://example.com/x"}), "deny")
+        r = self.ws("hook", "pre-tool-use",
+                    stdin=json.dumps({"tool_name": "WebFetch", "tool_input": {"url": "https://example.com/x"}}))
+        reason = json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("ref add https://example.com/x", reason)
+        self.assertIn("WebFetch", reason)
+
+    def test_hook_pre_tool_use_ignores_web_tools_without_current_task(self):
+        self.assertIsNone(self.hook("WebFetch", {"url": "https://example.com/x"}))
+        self.assertIsNone(self.hook("Bash", {"command": "curl https://example.com/x"}))
+
+    def test_hook_denies_curl_wget_to_external_host_only(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        self.assertEqual(self.hook("Bash", {"command": "curl https://example.com/x"}), "deny")
+        self.assertIsNone(self.hook("Bash", {"command": "curl http://127.0.0.1:8000/"}))
+        self.assertIsNone(self.hook(
+            "Bash", {"command": "python3 scripts/ws ref add https://example.com/x --summary s"}))
+
+    def test_hook_post_tool_use_lists_search_result_urls(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        payload = {"tool_name": "WebSearch", "tool_response": {"results": [
+            {"content": [{"title": "A", "url": "https://a.example/1"}, {"title": "B", "url": "https://b.example/2"}]},
+            "plain string result（無視される）",
+        ]}}
+        r = self.ws("hook", "post-tool-use", stdin=json.dumps(payload))
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "PostToolUse")
+        self.assertIn("https://a.example/1", out["additionalContext"])
+        self.assertIn("https://b.example/2", out["additionalContext"])
+        self.assertIn("ref add", out["additionalContext"])
+
+    def test_hook_post_tool_use_no_output_without_current_task_or_urls(self):
+        payload = {"tool_name": "WebSearch", "tool_response": {"results": [{"content": [{"url": "https://a.example/1"}]}]}}
+        self.assertEqual(self.ws("hook", "post-tool-use", stdin=json.dumps(payload)).stdout.strip(), "")
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        self.assertEqual(self.ws("hook", "post-tool-use",
+                                 stdin=json.dumps({"tool_name": "WebSearch", "tool_response": {"results": []}})
+                                 ).stdout.strip(), "")
+
+    def test_hook_post_tool_use_is_fail_open_on_garbage(self):
+        r = self.ws("hook", "post-tool-use", stdin="not json")
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stdout.strip(), "")
 
