@@ -25,6 +25,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
      `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
 
 `projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
+`docs/snapshots/`（規則の根拠にした Web ページの原文。約 1.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/*.md`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
 
@@ -38,7 +39,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）か新しいセッション（Codex）を促す |
 | 「この URL を調べて」「この資料を読んで」 | `scripts/ws ref add <URL>` で本文丸ごとを references/ に残してから読む（WebFetch は hook が止めて ref add に誘導する） |
 | 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-5.4-mini）に渡し、結論と出所だけ受け取る |
-| 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す |
+| 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す。Claude Code では researcher の中（fork）で走り、本線には要点（`.summary.md`）だけが戻る |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` で用語集に足す |
 | 「結論を先に書いて」「その言い方はやめて」 | `scripts/ws lesson add "報告は結論を先に書く（読む人はチャットしか見ない）"` で `LESSONS.md` に 1 行残す。案件固有なら `--project acme` で案件の決まりごとへ |
@@ -52,6 +53,9 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 hook は起動のたび（`/clear` や compact のあとも）に現在のタスクを差し込むので、切り替え忘れが起きにくくなっています。
 Claude Code では `/clear` の前に `/rename <タスク名>` しておくと `/resume` で戻れます。起動直後に `/context` を一度見ると、AGENTS.md と hook の注入がコンテキストをどれだけ使っているか分かります。
 長い調べ物は、結論と出所だけを持ち帰るようサブエージェントに分けると、本線のコンテキストが汚れません。
+モデルと reasoning effort はセッションの最初に決めます。途中で変えると、そこから会話全体のキャッシュが作り直しになります。
+試行が失敗したら訂正で続けず `/rewind`（Esc 2 回）で戻ってから言い直します。戻った先までの会話はキャッシュ済みです。
+`/usage` の「Prompt cache (main)」行（Claude Code 2.1.251 以降）で、直近のキャッシュ miss の回数と warm/cold を確認できます。
 
 ### 人が直接コマンドを叩きたいとき
 
@@ -95,8 +99,8 @@ agent-ws/
 │           ├── index.md   タスク一覧
 │           └── <yyyymmdd_slug>/
 │               ├── index.md      目的・進め方・現在地・次の一手・未確定の用語・情報源の一覧
-│               └── references/   集めた情報（出所・取得日時・原文）
-├── docs/                  委譲規則の根拠台帳（URL・取得日時・原文スナップショット）
+│               └── references/   集めた情報（要点 .md と原文 .orig.md の対、文字起こしは正規化版 .normalized.md と要点 .summary.md も）
+├── docs/                  規則の根拠台帳（委譲規則・トークン節約の 5 点。URL・取得日時・原文スナップショット）
 ├── tests/test_ws.py       scripts/ws の自己チェック
 └── .ws/                   （git 管理外）最後に設定したタスク（current）と、セッションごとの現在のタスクの写し・最終応答時刻
 ```
@@ -113,22 +117,27 @@ agent-ws/
 ### hooks が止めるもの
 
 `scripts/ws hook pre-tool-use` が、ツールの入力（読むパス・grep の対象・シェルのコマンド）に「現在のタスク以外の `projects/*/tasks/*/`」が含まれていたら拒否し、理由として `knowledges/` を案内します。
-`tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。
+`tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
 Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` から同じスクリプトを呼びます。
 起動時の案内（SessionStart）は JSON の `additionalContext` で返します。Claude Code は素のテキストでも文脈に足しますが、Codex CLI は JSON でないと文脈に載りません（0.153.4 で確認）。
 
 「`mkdir` ではなく `scripts/ws task new` を使う」は規約とスキルで指示しているだけで、hook では止めていません。エージェントが手でフォルダを作ってしまう事故が実際に起きたら、`projects/*/tasks/` 配下への直接の `mkdir` を hook で止める形に足せます。
 
+正規化版（`.normalized.md`）がある文字起こしの原文を Read や Grep しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed`/`grep` は書き換えずに deny し、正規化版のパスを示します）。
+
 ### 1 時間以上空いたあとの 1 通目を止める
 
 Claude のプロンプトキャッシュはサブスクリプションで 1 時間で切れ、切れたあと同じ会話に続きを送ると会話全文を定価で再処理します。
 agent-ws は Stop hook で応答が終わった時刻を記録し、次に人がメッセージを送ったとき 60 分以上空いていれば、UserPromptSubmit hook がその 1 通を送らずに止めて `/clear` して index.md から再開するよう案内します。止めた時点では API は呼ばれないので費用はかかりません（実測: 所要 208 ms、使用トークン 0）。
-それでも続けたいときは、同じ内容を 10 分以内にもう一度送れば通ります。止めた本文は `.ws/sessions/` に残ります。しきい値は環境変数 `WS_CACHE_TTL_MIN`（既定 60）で変えられ、API キー直叩きなどキャッシュが 5 分で切れる環境なら 5 にします。
+それでも続けたいときは、同じ内容を 10 分以内にもう一度送れば通ります。止めた本文は `.ws/sessions/` に残ります。
+しきい値の優先順位は 環境変数 `WS_CACHE_TTL_MIN` → hook 呼び出しの `--ttl` 引数 → 既定 60（分）です。Codex CLI は `.codex/hooks.json` の user-prompt-submit が `--ttl 30` を渡します（GPT-5.6 以降のプロンプトキャッシュは最後の利用から 30 分は再利用できる、が公式の保証で、`prompt_cache_options.ttl` の既定かつ唯一の値が `30m` のため。それより長く残ることはある）。
+Claude で API キーを直に叩いていてキャッシュが 5 分で切れる環境なら `WS_CACHE_TTL_MIN=5` にします。逆に切れてほしくない・60 分のままでよいなら `.claude/settings.json` に `"promptCacheTtl": "1h"`（Claude Code 2.1.242 以降）を置くとプロンプトキャッシュ自体を 1 時間に延ばせます（書き込み単価は上がります）。
 
 ### index.md
 
 各フォルダの `index.md` が入口です。`<!-- ws:index -->` と `<!-- /ws:index -->` の間は `scripts/ws` が自動で書き換え、その外側は手書きのまま残ります。
 タスクの `index.md` には `references/` の中身が直接並ぶので、情報源を探すのに 1 回で済みます。
+`ref add` は要点ファイル（`<name>.md`。frontmatter・引用した記述・使いどころ）と原文ファイル（`<name>.orig.md`。本文そのまま）の対で保存し、一覧には要点側だけが載ります。旧形式（1 ファイル）で残っている reference は `scripts/ws ref split <file>` で新形式に移行できます。
 
 ### 用語集
 
@@ -149,7 +158,7 @@ agent-ws は Stop hook で応答が終わった時刻を記録し、次に人が
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
 - `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しいセッションと `/clear` のあとは、最後に設定したタスク（`.ws/current`）から始まります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
 - Windows では `.claude/skills` の symlink を作るのに開発者モードか管理者権限が要ります。`python3` が `py -3` の環境では `.claude/settings.json` と `.codex/hooks.json` のコマンドを書き換えてください。
-- Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。
+- Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。今回 user-prompt-submit に `--ttl 30` を足したので、更新後は `/hooks` で trust し直してください。
 
 ## 計測
 

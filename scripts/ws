@@ -33,9 +33,14 @@ TASK_RE = re.compile(r"projects/([^/\s\"'`<>]+)/tasks/([^/\s\"'`<>]+)")
 KNOW_REF_RE = re.compile(r"^-\s*knowledges/(\S+?)（updated (\d{4}-\d{2}-\d{2})）", re.M)
 LONG_TEXT = 10_000  # これを超える文字起こしは範囲を分けて読ませる
 REF_KINDS = ("web", "file", "transcript", "chat", "person")
+# reference の派生ファイル。ref add の付け替え・ref split の拒否・doctor のスキップがこれを見る。
+# index は .orig.md だけ除外する（正規化版 .normalized.md と要点 .summary.md は次のセッションが使うので一覧に載せる）
+DERIVED_SUFFIXES = (".orig.md", ".normalized.md", ".summary.md")
 # 前回の応答からこの分数以上空いていたら、次の 1 通を止めて /clear を勧める
-# （Claude サブスクリプションのプロンプトキャッシュ TTL は 60 分。API 直叩きは 5 分）
-CACHE_TTL_MIN = int(os.environ.get("WS_CACHE_TTL_MIN", "60"))
+# （Claude サブスクリプションのプロンプトキャッシュ TTL は 60 分。API 直叩きは 5 分。Codex は 30 分）
+# 優先順位: 環境変数 → hook の --ttl 引数 → 既定 60（cmd_hook_user_prompt_submit で解決する）。
+# 未設定を区別するため None のまま持つ（int() で確定させない）。
+CACHE_TTL_MIN_ENV = os.environ.get("WS_CACHE_TTL_MIN")
 REPROMPT_GRACE_MIN = 10  # 止めたあと、この分数以内の再送は通す
 SESSIONS = ROOT / ".ws" / "sessions"
 LESSONS = ROOT / "LESSONS.md"  # 人からの指摘。1 行 1 件。hook が起動のたびに全行を差し込む
@@ -152,11 +157,13 @@ def index_entries(d: Path) -> list[str]:
     for p in sorted(d.iterdir()):
         if p.name.startswith("."):
             continue
-        if p.is_file() and p.suffix == ".md" and p.name != "index.md":
+        if p.is_file() and p.suffix == ".md" and p.name != "index.md" and not p.name.endswith(".orig.md"):
             lines.append(entry_line(p, d))
         elif p.is_dir() and p.name == "references":
-            # タスクの index.md からは情報源を1段展開して直接見せる（読む回数を1回減らす）
-            lines += [entry_line(q, d) for q in sorted(p.glob("*.md")) if q.name != "index.md"]
+            # タスクの index.md からは情報源を1段展開して直接見せる（読む回数を1回減らす）。
+            # 原文ファイル（.orig.md）は一覧に出さない（要点ファイルだけで足りる）
+            lines += [entry_line(q, d) for q in sorted(p.glob("*.md"))
+                      if q.name != "index.md" and not q.name.endswith(".orig.md")]
         elif p.is_dir() and (p / "index.md").exists():
             lines.append(entry_line(p / "index.md", d))
     return lines
@@ -383,19 +390,68 @@ def cmd_ref_add(args):
         src = rel(f) if f.resolve().is_relative_to(ROOT) else str(f.resolve())
     title = args.title or title or src
     dest = dest_dir / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
+    for suffix in DERIVED_SUFFIXES:  # 情報源が *.orig.md 等（スナップショットの原文など）でも要点側を派生扱いの名前にしない
+        if dest.name.endswith(suffix):
+            dest = dest.with_name(dest.name[: -len(suffix)] + "_" + suffix[1:-3] + ".md")
     if dest.exists():
         dest = dest.with_name(dest.stem + f"_{now():%S}.md")
+    # 要点ファイル（frontmatter＋引用した記述＋使いどころ）と原文ファイル（.orig.md、frontmatter 無し）の対で保存する。
+    # index には要点ファイルだけが載る（index_entries が .orig.md を除外）
+    dest_orig = dest.with_name(dest.stem + ".orig.md")
+    write(dest_orig, body)
     write(dest, render(TEMPLATES / "reference.md", title=title, kind=kind, source=src, via=via,
                        retrieved_at=now().isoformat(timespec="seconds"),
                        retrieved_by=os.environ.get("WS_AGENT", "unknown"),
-                       summary=args.summary or "", body=body))
+                       summary=args.summary or "", orig_name=dest_orig.name))
     if task:
         update_index(task / "references")
         update_index(task)
     shown = rel(dest) if dest.resolve().is_relative_to(ROOT) else str(dest.resolve())
+    shown_orig = rel(dest_orig) if dest_orig.resolve().is_relative_to(ROOT) else str(dest_orig.resolve())
     print(f"保存: {shown}")
+    print(f"原文: {shown_orig}")
     if not args.summary:
         print("summary が空。読んだら summary・「引用した記述」・「このタスクでの使いどころ」を埋める")
+
+
+# 原文節は要点ファイルの最後の節。本文（Web ページの Markdown）にも「## 見出し」が出るので、次の見出しで止めず末尾まで取る
+_ORIG_SECTION_RE = re.compile(r"^##\s+原文（改変しない）\s*\n(.*)\Z", re.S | re.M)
+
+
+def _shown(p: Path) -> str:
+    """表示用のパス。ROOT の中なら相対、外（ref add --dir で外に置いたもの）なら絶対。"""
+    return rel(p) if p.resolve().is_relative_to(ROOT) else str(p.resolve())
+
+
+def cmd_ref_split(args):
+    """旧形式（1 ファイルに原文まで書いた reference）を要点＋<stem>.orig.md の対に分割する。冪等。
+    派生ファイル（.orig.md / .normalized.md / .summary.md）と、既に新形式の要点ファイルには手を付けない。"""
+    f = Path(args.file)
+    if not f.is_file():
+        die(f"{args.file} が無い")
+    if f.name.endswith(DERIVED_SUFFIXES):
+        die(f"{_shown(f)} は派生ファイル。ref split は旧形式の reference（1 ファイル）にだけ使う")
+    orig = f.with_name(f.stem + ".orig.md")
+    if orig.is_file():
+        print(f"済: {_shown(f)} は既に分割済み（{_shown(orig)}）")
+        return
+    text = f.read_text(encoding="utf-8")
+    m = _ORIG_SECTION_RE.search(text)
+    raw = m.group(1).lstrip("\n") if m else ""
+    if raw.lstrip().startswith("原文: "):
+        print(f"済: {_shown(f)} は既に新形式（.orig.md が無いので原文は失われている。source から ref add で撮り直す）")
+        return
+    if not raw.strip():
+        print(f"{_shown(f)}: 「原文（改変しない）」節が空。何もしない")
+        return
+    write(orig, raw)
+    pointer = f"原文: [{orig.name}]({orig.name})（改変しない。文字起こしなら正規化版 *.normalized.md を読む）\n\n"
+    new_text = text[:m.start(1)] + pointer + text[m.end(1):]
+    f.write_text(new_text, encoding="utf-8")
+    print(f"分割: {_shown(f)} / 原文: {_shown(orig)}")
+    if f.parent.name == "references":
+        update_index(f.parent)
+        update_index(f.parent.parent)
 
 
 # ---- 用語集と文字起こし ----------------------------------------------------
@@ -431,14 +487,19 @@ def cmd_transcript_normalize(args):
     if not name:
         die("案件が分からない。--project <name> を付ける")
     pairs = load_glossary(project_dir(name))
-    text = f.read_text(encoding="utf-8", errors="replace")
+    # 新形式（要点ファイル）が渡されたら隣の .orig.md を読む。.orig.md 自体を渡されても、
+    # 旧形式（1 ファイル）を渡されても出力名は <stem>.normalized.md のまま
+    stem = f.name[: -len(".orig.md")] if f.name.endswith(".orig.md") else f.stem
+    orig = f.with_name(stem + ".orig.md")
+    src_file = orig if orig.is_file() else f
+    text = src_file.read_text(encoding="utf-8", errors="replace")
     counts: dict[tuple[str, str], int] = {}
     for alias, term in pairs:
         n = text.count(alias)
         if n:
             text = text.replace(alias, term)
             counts[(alias, term)] = n
-    out = f.with_name(f.stem + ".normalized.md")
+    out = f.with_name(stem + ".normalized.md")
     write(out, text)
     shown = rel(out) if out.resolve().is_relative_to(ROOT) else str(out)
     print(f"出力: {shown}（{len(text):,} 文字・{text.count(chr(10)) + 1:,} 行）")
@@ -557,11 +618,17 @@ def cmd_doctor(args):
             if meta.get("status") != "doing":
                 continue
             for rf in (refs.glob("*.md") if refs.is_dir() else []):
-                if rf.name == "index.md":
+                if rf.name == "index.md" or rf.name.endswith(DERIVED_SUFFIXES):
                     continue
                 rmeta, rbody = read_frontmatter(rf)
-                if not _section_raw(rbody, "原文（改変しない）").strip():
-                    problems.append(f"{rel(rf)}: 「原文（改変しない）」節が空")
+                raw_orig_section = _section_raw(rbody, "原文（改変しない）").strip()
+                orig = rf.with_name(rf.stem + ".orig.md")
+                has_orig = orig.is_file() and orig.stat().st_size > 0
+                # 新形式は「原文（改変しない）」節が常にポインタ行（空にならない）なので、
+                # ポインタ行かどうかで新旧を見分ける。旧形式は原文そのものが入っている
+                is_old_format_body = bool(raw_orig_section) and not raw_orig_section.startswith("原文: ")
+                if not has_orig and not is_old_format_body:
+                    problems.append(f"{rel(rf)}: 原文が無い（.orig.md も原文節も空）")
                 quote = _section_raw(rbody, "引用した記述（原文のまま。要約しない）").strip()
                 if not quote or (quote.startswith("（") and quote.endswith("）")):
                     problems.append(f"{rel(rf)}: 「引用した記述」節が未記入のまま")
@@ -612,17 +679,20 @@ def cmd_hook_stop(args):
 
 
 def cmd_hook_user_prompt_submit(args):
-    """前回の応答から CACHE_TTL_MIN 以上空いていたら、この 1 通を送らずに止める。
+    """前回の応答から TTL 以上空いていたら、この 1 通を送らずに止める。
 
+    TTL は環境変数 WS_CACHE_TTL_MIN があればそれ、無ければ --ttl、それも無ければ 60 分
+    （Codex は .codex/hooks.json から --ttl 30 を渡す。Claude サブスクリプションは既定 60 分）。
     止めると会話全文の再処理（キャッシュ切れ）が起きない。人は /clear して index.md から
     再開するか、同じ内容をもう一度送る（REPROMPT_GRACE_MIN 以内なら通す）。
     """
+    ttl_min = int(CACHE_TTL_MIN_ENV) if CACHE_TTL_MIN_ENV else (args.ttl if args.ttl is not None else 60)
     data = _stdin_json()
     sid = data.get("session_id")
     if not sid or not _sess(sid, "last_stop").exists():
         return
     gap_min = (time.time() - int(_sess(sid, "last_stop").read_text().strip() or 0)) / 60
-    if gap_min < CACHE_TTL_MIN:
+    if gap_min < ttl_min:
         return
     warned = _sess(sid, "warned")
     if warned.exists() and time.time() - warned.stat().st_mtime < REPROMPT_GRACE_MIN * 60:
@@ -633,7 +703,7 @@ def cmd_hook_user_prompt_submit(args):
     saved.write_text(data.get("prompt") or data.get("user_input") or "", encoding="utf-8")
     cur = current_task(sid)
     where = f"現在のタスクは {rel(cur)}（index.md に現在地と次の一手）" if cur else "現在のタスクは未設定"
-    print(f"[agent-ws] 前回の応答から {gap_min:.0f} 分空いています。プロンプトキャッシュ（{CACHE_TTL_MIN} 分）は"
+    print(f"[agent-ws] 前回の応答から {gap_min:.0f} 分空いています。プロンプトキャッシュ（{ttl_min} 分）は"
           "切れているので、この会話に続きを送ると会話全文を定価で再処理します。\n"
           f"安く済ませるなら /clear して index.md から再開してください。{where}。\n"
           f"それでも続けるなら、同じ内容を {REPROMPT_GRACE_MIN} 分以内にもう一度送れば通します"
@@ -697,6 +767,24 @@ def _ref_add_reason(url: str, tool_label: str) -> str:
             "（読んだら「引用した記述」「使いどころ」「summary」を埋める）")
 
 
+def _normalized_for(path_str: str) -> Path | None:
+    """path_str が文字起こしの原文で、正規化版があるならそのパスを返す（無ければ None）。
+    誤変換に引きずられないよう、原文ではなく正規化版を読ませるための読み替え先。"""
+    p = Path(path_str)
+    if not p.is_absolute():
+        p = ROOT / p
+    if p.name.endswith(".normalized.md"):
+        return None
+    if p.name.endswith(".orig.md"):
+        stem = p.name[: -len(".orig.md")]
+    else:
+        stem = p.stem
+        if p.with_name(stem + ".orig.md").is_file():
+            return None  # 新形式の要点ファイル（小さいので読ませてよい）
+    norm = p.with_name(stem + ".normalized.md")
+    return norm if norm.is_file() else None
+
+
 def cmd_hook_pre_tool_use(args):
     data = _stdin_json()
     tool = data.get("tool_name", "")
@@ -730,24 +818,46 @@ def cmd_hook_pre_tool_use(args):
         _deny("[agent-ws] bench/ は計測用の架空の材料（案件・タスク・資料）。仕事では読まない。"
               "agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。")
         return
+    # docs/snapshots/ は agent-ws 自体の規則の根拠（Web ページの原文、数十 KB〜）。案件の仕事で grep が当たると丸ごと読んでしまう
+    if re.search(r"(?<![\w.-])docs/snapshots(?![\w.-])", blob.replace(str(ROOT) + "/", "")) and cur:
+        _deny("[agent-ws] docs/snapshots/ は agent-ws 自体の規則の根拠（Web ページの原文）。案件の仕事では読まない"
+              "（台帳は docs/*.md）。agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。")
+        return
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
-    if not hits:
-        return
-    cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
-    others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
-    if not others:
-        return
-    if cur:
-        reason = (f"[agent-ws] 現在のタスク（{rel(cur)}）以外のタスクフォルダにはアクセスしない: "
-                  f"{', '.join(others)}\n"
-                  f"ナレッジの正本は projects/{cur_key[0]}/knowledges/（入口は knowledges/index.md）。"
-                  "そこに無ければ knowledge-promote で昇格するか、人に聞く。"
-                  f"タスクを切り替えるなら scripts/ws task use {others[0]}。")
-    else:
-        reason = (f"[agent-ws] 現在のタスクが未設定のまま tasks/ 配下にアクセスしない: {', '.join(others)}\n"
-                  "着手するには scripts/ws task new <project> <slug>（新規）か "
-                  f"scripts/ws task use {others[0]}（既存）。")
-    _deny(reason)
+    if hits:
+        cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
+        others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
+        if others:
+            if cur:
+                reason = (f"[agent-ws] 現在のタスク（{rel(cur)}）以外のタスクフォルダにはアクセスしない: "
+                          f"{', '.join(others)}\n"
+                          f"ナレッジの正本は projects/{cur_key[0]}/knowledges/（入口は knowledges/index.md）。"
+                          "そこに無ければ knowledge-promote で昇格するか、人に聞く。"
+                          f"タスクを切り替えるなら scripts/ws task use {others[0]}。")
+            else:
+                reason = (f"[agent-ws] 現在のタスクが未設定のまま tasks/ 配下にアクセスしない: {', '.join(others)}\n"
+                          "着手するには scripts/ws task new <project> <slug>（新規）か "
+                          f"scripts/ws task use {others[0]}（既存）。")
+            _deny(reason)
+            return
+    # ここまで来たら他タスクへのアクセスではない。正規化版があるならそちらへ読み替える
+    # （誤変換の残る原文を読ませない。順序はここが最後＝上の deny 判定を全部通ったあとに評価する）
+    if tool in ("Read", "Grep"):
+        key = "file_path" if tool == "Read" else "path"  # Grep はディレクトリ指定なら対象外（_normalized_for が None）
+        norm = _normalized_for(tool_input.get(key) or "")
+        if norm:
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "updatedInput": {**tool_input, key: str(norm)},
+            }}, ensure_ascii=False))
+    elif tool in ("Bash", "shell"):
+        for m in re.finditer(r"[^\s'\"]+\.md", tool_input.get("command", "")):
+            norm = _normalized_for(m.group(0))
+            if norm:
+                shown = rel(norm) if norm.resolve().is_relative_to(ROOT) else str(norm)
+                _deny(f"[agent-ws] 正規化前の文字起こしは読まない（誤変換に引きずられる）。正規化版を読む: {shown}")
+                return
 
 
 def cmd_hook_post_tool_use(args):
@@ -806,6 +916,9 @@ def main(argv=None):
     q.add_argument("--kind", choices=REF_KINDS, help="省略時は URL なら web、ファイルなら file")
     q.add_argument("--dir", help="現在のタスクを使わず、このディレクトリに reference を書く（例: docs/ の根拠台帳）")
     q.set_defaults(fn=cmd_ref_add)
+    q = r.add_parser("split", help="旧形式（1 ファイル）の reference を要点＋<stem>.orig.md の対に分割する（冪等）")
+    q.add_argument("file")
+    q.set_defaults(fn=cmd_ref_split)
 
     tr = sub.add_parser("transcript", help="文字起こし").add_subparsers(dest="sub", required=True)
     q = tr.add_parser("normalize", help="用語集の誤変換を正式表記に置換した *.normalized.md を作る")
@@ -844,7 +957,10 @@ def main(argv=None):
     h.add_parser("session-start").set_defaults(fn=cmd_hook_session_start)
     h.add_parser("pre-tool-use").set_defaults(fn=cmd_hook_pre_tool_use)
     h.add_parser("post-tool-use").set_defaults(fn=cmd_hook_post_tool_use)
-    h.add_parser("user-prompt-submit").set_defaults(fn=cmd_hook_user_prompt_submit)
+    q = h.add_parser("user-prompt-submit")
+    q.add_argument("--ttl", type=int,
+                    help="WS_CACHE_TTL_MIN 未設定時のキャッシュ TTL（分）。省略時 60（Codex は 30 を渡す）")
+    q.set_defaults(fn=cmd_hook_user_prompt_submit)
     h.add_parser("stop").set_defaults(fn=cmd_hook_stop)
 
     args = ap.parse_args(argv)
