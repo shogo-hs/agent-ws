@@ -33,7 +33,8 @@ TASK_RE = re.compile(r"projects/([^/\s\"'`<>]+)/tasks/([^/\s\"'`<>]+)")
 KNOW_REF_RE = re.compile(r"^-\s*knowledges/(\S+?)（updated (\d{4}-\d{2}-\d{2})）", re.M)
 LONG_TEXT = 10_000  # これを超える文字起こしは範囲を分けて読ませる
 REF_KINDS = ("web", "file", "transcript", "chat", "person")
-# reference の派生ファイル。index・doctor・ref split はこれで要点ファイルと見分ける
+# reference の派生ファイル。ref add の付け替え・ref split の拒否・doctor のスキップがこれを見る。
+# index は .orig.md だけ除外する（正規化版 .normalized.md と要点 .summary.md は次のセッションが使うので一覧に載せる）
 DERIVED_SUFFIXES = (".orig.md", ".normalized.md", ".summary.md")
 # 前回の応答からこの分数以上空いていたら、次の 1 通を止めて /clear を勧める
 # （Claude サブスクリプションのプロンプトキャッシュ TTL は 60 分。API 直叩きは 5 分。Codex は 30 分）
