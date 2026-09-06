@@ -554,7 +554,8 @@ def cmd_know_new(args):
     dest = kd / f"{max(nums, default=0) + 1:03d}_{slugify(args.title)}.md"
     write(dest, render(TEMPLATES / "knowledge.md", title=args.title, date=today()))
     update_index(kd)
-    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く")
+    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く。"
+          f"書いたら scripts/ws index projects/{args.project}/knowledges で一覧の要約を更新する（自動では更新されない）")
 
 
 # ---- 教訓（人からの指摘） ---------------------------------------------------
