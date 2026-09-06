@@ -196,9 +196,10 @@ def current_task(sid: str | None = None) -> Path | None:
         if not src.exists() and CURRENT.exists():
             SESSIONS.mkdir(parents=True, exist_ok=True)
             src.write_text(CURRENT.read_text(encoding="utf-8"), encoding="utf-8")
-    if not src.exists():
-        return None
-    p = ROOT / src.read_text(encoding="utf-8").strip()
+    text = src.read_text(encoding="utf-8").strip() if src.exists() else ""
+    if not text:
+        return None  # 無い、または task done 直後の空の写し（未設定）
+    p = ROOT / text
     return p if (p / "index.md").exists() else None
 
 
@@ -262,7 +263,9 @@ def cmd_task_done(args):
         die("現在のタスクが無い")
     set_frontmatter(t / "index.md", status="done", updated=today())
     if sid:
-        _sess(sid, "current").unlink(missing_ok=True)
+        # 空の写し = 未設定。消すと次の解決で .ws/current（他のセッションが最後に設定したタスク）を拾ってしまう
+        SESSIONS.mkdir(parents=True, exist_ok=True)
+        _sess(sid, "current").write_text("", encoding="utf-8")
     if CURRENT.exists() and CURRENT.read_text(encoding="utf-8").strip() == rel(t):
         CURRENT.unlink()  # 他のセッションが別のタスクに切り替えていたら、そちらは残す
     update_index(t.parent)
@@ -627,7 +630,7 @@ def cmd_hook_pre_tool_use(args):
             # 切り替え・完了の相手は .ws/current。CLI が環境変数でセッションを知らない場合に備えて
             # 写しを捨て、CLI か次の hook が写し直す。done は写しの内容を先に .ws/current へ戻す
             copy = _sess(sid, "current")
-            if m.group(1) == "done" and copy.exists():
+            if m.group(1) == "done" and copy.exists() and copy.read_text(encoding="utf-8").strip():
                 CURRENT.write_text(copy.read_text(encoding="utf-8"), encoding="utf-8")
             copy.unlink(missing_ok=True)
         return  # ws 自身によるタスク操作は通す
