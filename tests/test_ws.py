@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -23,20 +24,22 @@ class WsFlowTest(unittest.TestCase):
         (self.root / "projects").mkdir()
         shutil.copy(REPO / "projects" / "index.md", self.root / "projects" / "index.md")
         self.env = {**os.environ, "WS_ROOT": str(self.root)}
+        for k in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):  # テストを起こしたエージェントのセッションを持ち込まない
+            self.env.pop(k, None)
 
     def tearDown(self):
         shutil.rmtree(self.root)
 
-    def ws(self, *args, stdin=None, check=True):
+    def ws(self, *args, stdin=None, check=True, env=None):
         r = subprocess.run([sys.executable, str(WS), *args], input=stdin, capture_output=True,
-                           text=True, env=self.env, cwd=self.root)
+                           text=True, env={**self.env, **(env or {})}, cwd=self.root)
         if check and r.returncode != 0:
             self.fail(f"ws {' '.join(args)} failed:\n{r.stderr}")
         return r
 
-    def hook(self, tool, tool_input):
+    def hook(self, tool, tool_input, sid=None):
         r = self.ws("hook", "pre-tool-use",
-                    stdin=json.dumps({"tool_name": tool, "tool_input": tool_input}))
+                    stdin=json.dumps({"session_id": sid, "tool_name": tool, "tool_input": tool_input}))
         if not r.stdout.strip():
             return None
         return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"]
@@ -141,8 +144,59 @@ class WsFlowTest(unittest.TestCase):
             self.ws("lesson", "add", f"教訓 {i}")
         self.assertIn("LESSONS.md が 21 行", self.ws("doctor", check=False).stdout)
 
+    def test_sessions_keep_their_own_current_task(self):
+        """同じ clone の 2 セッション。片方の task use がもう片方の現在のタスクを変えない（issue #1）。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "y")
+        self.ws("task", "new", "acme", "x")
+        tasks = self.root / "projects/acme/tasks"
+        x, y = (next(tasks.glob(f"*_{s}")) for s in ("x", "y"))
+        s1, s2 = "sess-1", "sess-2"
+        e1, e2 = {"CLAUDE_CODE_SESSION_ID": s1}, {"CODEX_THREAD_ID": s2}
+
+        def ev(name, sid, **kw):
+            return json.dumps({"session_id": sid, "hook_event_name": name, **kw})
+
+        # セッション 1 が X で起動すると写しができる。その後セッション 2 が Y に切り替える
+        self.assertIn(x.name, self.ws("hook", "session-start", stdin=ev("SessionStart", s1, source="startup")).stdout)
+        self.assertEqual((self.root / ".ws/sessions" / f"{s1}.current").read_text(encoding="utf-8").strip(),
+                         f"projects/acme/tasks/{x.name}")
+        self.hook("Bash", {"command": f"scripts/ws task use projects/acme/tasks/{y.name}"}, sid=s2)
+        self.ws("task", "use", f"projects/acme/tasks/{y.name}", env=e2)
+        # セッション 1 の hook と CLI は X のまま。セッション 2 と端末（環境変数なし）は Y
+        self.assertIsNone(self.hook("Read", {"file_path": str(x / "index.md")}, sid=s1))
+        self.assertEqual(self.hook("Read", {"file_path": str(y / "index.md")}, sid=s1), "deny")
+        self.assertEqual(self.hook("Read", {"file_path": str(x / "index.md")}, sid=s2), "deny")
+        out = self.ws("hook", "session-start", stdin=ev("SessionStart", s1, source="compact")).stdout
+        self.assertIn(x.name, out)
+        self.assertNotIn(y.name, out)
+        self.assertIn(x.name, self.ws("task", "current", env=e1).stdout)
+        self.assertIn(y.name, self.ws("task", "current", env=e2).stdout)
+        self.assertIn(y.name, self.ws("task", "current").stdout)
+        (self.root / "memo.txt").write_text("メモ", encoding="utf-8")
+        self.ws("ref", "add", str(self.root / "memo.txt"), "--summary", "s", env=e1)
+        self.assertTrue(list((x / "references").glob("*_memo.md")))
+        (self.root / ".ws/sessions" / f"{s1}.last_stop").write_text(str(int(time.time()) - 61 * 60), encoding="utf-8")
+        r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", s1, prompt="続き"), check=False)
+        self.assertIn(x.name, r.stderr)
+        self.assertNotIn(y.name, r.stderr)
+        # セッション 1 自身の切り替えは効く。CLI がセッションを知らなくても（環境変数なし）hook が写しを捨てるので追いつく
+        self.hook("Bash", {"command": f"scripts/ws task use projects/acme/tasks/{y.name}"}, sid=s1)
+        self.ws("task", "use", f"projects/acme/tasks/{y.name}")
+        self.assertIsNone(self.hook("Read", {"file_path": str(y / "index.md")}, sid=s1))
+        # /clear で写しが消え、最後に設定したタスク（.ws/current）から始まる
+        self.ws("task", "use", f"projects/acme/tasks/{x.name}", env=e2)
+        self.assertIn(x.name, self.ws("hook", "session-start", stdin=ev("SessionStart", s1, source="clear")).stdout)
+        # セッション 1 が完了にしても、セッション 2 の現在のタスクは残る
+        self.ws("task", "use", f"projects/acme/tasks/{y.name}", env=e2)
+        self.hook("Bash", {"command": "scripts/ws task done"}, sid=s1)
+        self.ws("task", "done", env=e1)
+        self.assertIn("status: done", (x / "index.md").read_text(encoding="utf-8"))
+        self.assertNotIn("status: done", (y / "index.md").read_text(encoding="utf-8"))
+        self.assertIn(y.name, self.ws("task", "current", env=e2).stdout)
+        self.assertEqual(self.ws("task", "current", env=e1, check=False).returncode, 1)
+
     def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
-        import time
         sid = "sess-1"
         def ev(name, **kw):
             return json.dumps({"session_id": sid, "hook_event_name": name, **kw})

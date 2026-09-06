@@ -92,7 +92,7 @@ agent-ws/
 │               ├── index.md      目的・進め方・現在地・次の一手・未確定の用語・情報源の一覧
 │               └── references/   集めた情報（出所・取得日時・原文）
 ├── tests/test_ws.py       scripts/ws の自己チェック
-└── .ws/                   （git 管理外）いま着手中のタスク（current）と、セッションごとの最終応答時刻
+└── .ws/                   （git 管理外）最後に設定したタスク（current）と、セッションごとの現在のタスクの写し・最終応答時刻
 ```
 
 ## 仕組み
@@ -141,7 +141,7 @@ agent-ws は Stop hook で応答が終わった時刻を記録し、次に人が
 ## 制約と注意
 
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
-- `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同時に複数のタスクを別セッションで進めたい場合は、clone を分けてください。
+- `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しいセッションと `/clear` のあとは、最後に設定したタスク（`.ws/current`）から始まります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
 - Windows では `.claude/skills` の symlink を作るのに開発者モードか管理者権限が要ります。`python3` が `py -3` の環境では `.claude/settings.json` と `.codex/hooks.json` のコマンドを書き換えてください。
 - Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。
 
