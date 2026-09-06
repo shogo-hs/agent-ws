@@ -57,7 +57,7 @@ env -u CLAUDECODE claude -p "<依頼文>" --model sonnet|haiku --output-format j
   --setting-sources project --strict-mcp-config --max-turns 30 --allowedTools "Read,Grep,Glob,Bash,Write,Edit"
 ```
 
-結果は `results/runs.jsonl` に 1 行 1 セッション（最終応答・使ったツールとパス・書き換えたファイル付き）で追記されます。
+結果は `results/runs.jsonl`（朝の 99 セッション。`summary.md` の元）、`results/runs_ts7.jsonl`（PR #8 の部品分解。tag ts7-*）、`results/runs_ts8.jsonl`（PR #8 を A にした A/B/C の取り直し。tag ts8）に 1 行 1 セッション（最終応答・使ったツールとパス・書き換えたファイル付き）で追記されます。
 
 ## 数える値
 
