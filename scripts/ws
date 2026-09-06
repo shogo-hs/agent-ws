@@ -45,6 +45,10 @@ REPROMPT_GRACE_MIN = 10  # 止めたあと、この分数以内の再送は通�
 SESSIONS = ROOT / ".ws" / "sessions"
 LESSONS = ROOT / "LESSONS.md"  # 人からの指摘。1 行 1 件。hook が起動のたびに全行を差し込む
 LESSONS_MAX = 20  # これを超えたら doctor が「減らせ」と報告する（長いほど守られない）
+# SessionStart で注入する文字数の上限。hook の出力は 10,000 字で切られてファイル参照に化ける（Claude Code hooks リファレンス）
+INJECT_MAX = 6_000
+# tasks/ を横断してしまう一覧・検索のコマンド（Bash）。対象パスが projects / 案件直下 / tasks 直下なら hook が拒否する
+SCAN_CMD_RE = re.compile(r"(?<![\w-])(find|ls|tree|grep|rg|cat|head|tail|wc|du)\b")
 
 
 # ---- 小道具 ---------------------------------------------------------------
@@ -379,6 +383,9 @@ def cmd_ref_add(args):
     src = args.source
     via = "local"
     if re.match(r"https?://", src):
+        if not args.force and (dup := _existing_ref(dest_dir, src)):
+            print(f"既にある: {_shown(dup)}（source が同じ。読むならこのファイル、追記は「引用した記述」へ。撮り直すなら --force）")
+            return
         title, body, via = fetch(src)
         kind = args.kind or "web"
     else:
@@ -388,6 +395,9 @@ def cmd_ref_add(args):
         title, body = f.stem, f.read_text(encoding="utf-8", errors="replace")
         kind = args.kind or "file"
         src = rel(f) if f.resolve().is_relative_to(ROOT) else str(f.resolve())
+        if not args.force and (dup := _existing_ref(dest_dir, src)):
+            print(f"既にある: {_shown(dup)}（source が同じ。読むならこのファイル、追記は「引用した記述」へ。撮り直すなら --force）")
+            return
     title = args.title or title or src
     dest = dest_dir / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
     for suffix in DERIVED_SUFFIXES:  # 情報源が *.orig.md 等（スナップショットの原文など）でも要点側を派生扱いの名前にしない
@@ -421,6 +431,17 @@ _ORIG_SECTION_RE = re.compile(r"^##\s+原文（改変しない）\s*\n(.*)\Z", r
 def _shown(p: Path) -> str:
     """表示用のパス。ROOT の中なら相対、外（ref add --dir で外に置いたもの）なら絶対。"""
     return rel(p) if p.resolve().is_relative_to(ROOT) else str(p.resolve())
+
+
+def _existing_ref(d: Path, source: str) -> Path | None:
+    """同じ source を持つ reference の要点ファイル。同じページを 2 回撮って 2 回読むのを防ぐ（末尾の / と #fragment は無視）。"""
+    key = source.rstrip("/").split("#", 1)[0]
+    for p in sorted(d.glob("*.md")) if d.is_dir() else []:
+        if p.name == "index.md" or p.name.endswith(DERIVED_SUFFIXES):
+            continue
+        if read_frontmatter(p)[0].get("source", "").rstrip("/").split("#", 1)[0] == key:
+            return p
+    return None
 
 
 def cmd_ref_split(args):
@@ -746,11 +767,28 @@ def cmd_hook_session_start(args):
     # ponytail: 600 字で切る。超える案件が実際に出たら knowledges/ へ移す案内を doctor に足す
     pidx = PROJECTS / str(proj) / "index.md"
     rules = _section(read_frontmatter(pidx)[1] if pidx.exists() else "", "この案件での決まりごと", 600)
-    _emit_context(f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
-          f"まず {rel(t)}/index.md を読む。他の tasks/ 配下は読まない（hook が拒否する）。"
-          f"ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。\n"
-          f"この案件での決まりごと（projects/{proj}/index.md より）: {rules}\n"
-          f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
+    head = (f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
+            "他の tasks/ 配下は読まない（hook が拒否する）。\n"
+            f"この案件での決まりごと（projects/{proj}/index.md より）: {rules}\n")
+    # index.md の全文とナレッジの一覧をここで渡し、Read で読み直す 1〜2 ターン分の文脈の払い直しを省く
+    # （ターンごとに会話全体を再送する。bench では 1 ターン ≒ 32k トークンの cache read）。
+    # compact 後も SessionStart(compact) で同じものが入る。長すぎるときは従来どおりパスだけ示す
+    know = _index_block(PROJECTS / str(proj) / "knowledges" / "index.md")
+    full = (head + f"ナレッジの一覧（projects/{proj}/knowledges/index.md より。必要なものだけ開く）:\n{know}\n"
+            f"--- {rel(t)}/index.md の全文（Read で読み直さない。更新は Edit で）---\n{body.strip()}\n---")
+    if len(full) + len(tail) <= INJECT_MAX:
+        _emit_context(full + tail)
+        return
+    _emit_context(head + f"まず {rel(t)}/index.md を読む。ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。\n"
+                  f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
+
+
+def _index_block(idx: Path) -> str:
+    """index.md の自動生成部（<!-- ws:index --> の中）の行。無ければ（無し）。"""
+    if not idx.exists():
+        return "（無し）"
+    m = re.search(re.escape(IDX_BEGIN) + r"\n?(.*?)" + re.escape(IDX_END), idx.read_text(encoding="utf-8"), re.S)
+    return (m.group(1).strip() if m else "") or "（無し）"
 
 
 def _deny(reason: str):
@@ -783,6 +821,32 @@ def _normalized_for(path_str: str) -> Path | None:
             return None  # 新形式の要点ファイル（小さいので読ませてよい）
     norm = p.with_name(stem + ".normalized.md")
     return norm if norm.is_file() else None
+
+
+def _scan_roots(tool: str, tool_input: dict) -> list[str]:
+    """tasks/ を横断してしまう一覧・検索の対象（projects / projects/<案件> / projects/<案件>/tasks、未指定＝ルート）を返す。
+    Grep/Glob は path、Bash は find/ls/grep/rg 等の引数を見る。他タスクの本文が結果に混ざるのを防ぐ。"""
+    if tool in ("Grep", "Glob"):
+        cands = [tool_input.get("path") or "."]
+    elif tool in ("Bash", "shell"):
+        cmd = tool_input.get("command", "")
+        if not SCAN_CMD_RE.search(cmd):
+            return []
+        cands = re.findall(r"(?<=\s)(?:\S*/)?projects(?:/[^/\s'\"`;|&]+){0,2}/?(?=[\s'\"`;|&]|$)", cmd)
+        if re.search(r"\b(?:find|rg|tree|grep\s+-\w*r\w*)\b[^|;&]*\s\.(?:\s|$)", cmd) and not TASK_RE.search(cmd):
+            cands.append(".")
+    else:
+        return []
+    hit = []
+    for c in cands:
+        r = str(c).replace(str(ROOT) + "/", "").replace(str(ROOT), ".").rstrip("/") or "."
+        parts = r.split("/")
+        if len(parts) > 1 and "." in parts[-1]:
+            continue  # projects/index.md のようなファイル（一覧を読むのは正しい導線）
+        if r == "." or parts == ["projects"] or (len(parts) == 2 and parts[0] == "projects") or (
+                len(parts) == 3 and parts[0] == "projects" and parts[2] == "tasks"):
+            hit.append(r)
+    return hit
 
 
 def cmd_hook_pre_tool_use(args):
@@ -823,9 +887,9 @@ def cmd_hook_pre_tool_use(args):
         _deny("[agent-ws] docs/snapshots/ は agent-ws 自体の規則の根拠（Web ページの原文）。案件の仕事では読まない"
               "（台帳は docs/*.md）。agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。")
         return
+    cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
     if hits:
-        cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
         others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
         if others:
             if cur:
@@ -839,6 +903,13 @@ def cmd_hook_pre_tool_use(args):
                           "着手するには scripts/ws task new <project> <slug>（新規）か "
                           f"scripts/ws task use {others[0]}（既存）。")
             _deny(reason)
+            return
+    if cur:
+        roots = _scan_roots(tool, tool_input)
+        if roots:
+            _deny(f"[agent-ws] {', '.join(roots)} を横断して一覧・検索しない（他タスクの本文が結果に混ざり、トークンも無駄になる）。"
+                  f"一覧は projects/index.md と projects/{cur_key[0]}/tasks/index.md。検索は現在のタスク（{rel(cur)}）か "
+                  f"projects/{cur_key[0]}/knowledges/ に範囲を絞る。")
             return
     # ここまで来たら他タスクへのアクセスではない。正規化版があるならそちらへ読み替える
     # （誤変換の残る原文を読ませない。順序はここが最後＝上の deny 判定を全部通ったあとに評価する）
@@ -858,6 +929,21 @@ def cmd_hook_pre_tool_use(args):
                 shown = rel(norm) if norm.resolve().is_relative_to(ROOT) else str(norm)
                 _deny(f"[agent-ws] 正規化前の文字起こしは読まない（誤変換に引きずられる）。正規化版を読む: {shown}")
                 return
+
+
+def cmd_statusline(args):
+    """Claude Code の statusLine から呼ばれる（.claude/settings.json）。stdin の JSON を 1 行にする。
+    現在のタスク・文脈の使用率・このセッションの費用（定価）を常時見せ、/clear や compact の頃合いを人が判断できるようにする。
+    費用と使用率は Claude Code が渡す値をそのまま出す（自分では数えない）。"""
+    d = _stdin_json()
+    t = current_task(d.get("session_id"))
+    cw, cost = d.get("context_window") or {}, d.get("cost") or {}
+    pct = cw.get("used_percentage")
+    parts = [f"agent-ws {Path(rel(t)).name if t else '（タスク未設定）'}",
+             (d.get("model") or {}).get("display_name", ""),
+             f"ctx {pct:.0f}%" if isinstance(pct, (int, float)) else "ctx -",
+             f"${(cost.get('total_cost_usd') or 0):.2f}"]
+    print(" | ".join(p for p in parts if p))
 
 
 def cmd_hook_post_tool_use(args):
@@ -915,6 +1001,7 @@ def main(argv=None):
     q.add_argument("--title")
     q.add_argument("--kind", choices=REF_KINDS, help="省略時は URL なら web、ファイルなら file")
     q.add_argument("--dir", help="現在のタスクを使わず、このディレクトリに reference を書く（例: docs/ の根拠台帳）")
+    q.add_argument("--force", action="store_true", help="同じ source の reference が既にあっても撮り直す")
     q.set_defaults(fn=cmd_ref_add)
     q = r.add_parser("split", help="旧形式（1 ファイル）の reference を要点＋<stem>.orig.md の対に分割する（冪等）")
     q.add_argument("file")
@@ -952,6 +1039,7 @@ def main(argv=None):
     q.set_defaults(fn=cmd_lesson_add)
 
     sub.add_parser("doctor", help="index.md や frontmatter の欠落を報告する").set_defaults(fn=cmd_doctor)
+    sub.add_parser("statusline", help="Claude Code の statusLine（stdin に JSON）。現在のタスク・文脈の使用率・費用を 1 行で出す").set_defaults(fn=cmd_statusline)
 
     h = sub.add_parser("hook", help="エージェントの hooks から呼ばれる（stdin に JSON）").add_subparsers(dest="sub", required=True)
     h.add_parser("session-start").set_defaults(fn=cmd_hook_session_start)

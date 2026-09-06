@@ -685,6 +685,88 @@ class WsFlowTest(unittest.TestCase):
             {"session_id": sid, "tool_name": "Grep", "tool_input": {"pattern": "K", "path": str(task / "references")}}))
         self.assertEqual(r.stdout.strip(), "")
 
+    # ---- 第 6 弾: SessionStart の全文注入・横断検索の拒否・重複取得の検出・statusline ----
+
+    def _task(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "t1")
+        return next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+
+    def test_session_start_injects_index_and_knowledge_list(self):
+        task = self._task()
+        idx = task / "index.md"
+        idx.write_text(idx.read_text(encoding="utf-8").replace(
+            "（次のセッションが最初にやること。hook が起動時にここを読み上げる）", "顧客に見積の前提を確認する"), encoding="utf-8")
+        self.ws("know", "new", "acme", "移行方針")
+        out = json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        # index.md の全文（節見出しごと）とナレッジの一覧が入り、Read を促す文は無い
+        self.assertIn("## 次の一手", out)
+        self.assertIn("顧客に見積の前提を確認する", out)
+        self.assertIn("001_移行方針.md", out)
+        self.assertIn("読み直さない", out)
+        self.assertNotIn("まず projects/acme/tasks", out)
+        # 長すぎる index.md は従来どおりパスだけ示す（hook の出力は 10,000 字で切られる）
+        idx.write_text(idx.read_text(encoding="utf-8") + "x" * 7000, encoding="utf-8")
+        out = json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn(f"まず {task.relative_to(self.root).as_posix()}/index.md を読む", out)
+        self.assertNotIn("## 次の一手", out)
+        self.assertIn("次の一手（index.md より）: 顧客に見積の前提を確認する", out)
+
+    def test_hook_denies_cross_task_scans_only_with_current_task(self):
+        task = self._task()
+        rel = task.relative_to(self.root).as_posix()
+        deny = [("Grep", {"pattern": "単価"}),                                  # path 無し = ルート全体
+                ("Grep", {"pattern": "単価", "path": str(self.root / "projects/acme")}),
+                ("Glob", {"pattern": "**/index.md"}),
+                ("Bash", {"command": "find projects -maxdepth 3 | head -100"}),
+                ("Bash", {"command": "ls -la projects/acme/tasks/"}),
+                ("Bash", {"command": "ls projects/acme/tasks"}),
+                ("Bash", {"command": f"grep -rn 単価 {self.root}/projects/acme"}),
+                ("Bash", {"command": "rg 単価 ."}),
+                ("Bash", {"command": "tree projects/"})]
+        for tool, inp in deny:
+            self.assertEqual(self.hook(tool, inp), "deny", (tool, inp))
+        allow = [("Grep", {"pattern": "単価", "path": str(self.root / "projects/acme/knowledges")}),
+                 ("Grep", {"pattern": "単価", "path": str(task)}),
+                 ("Bash", {"command": "cat projects/acme/tasks/index.md"}),
+                 ("Bash", {"command": "cat projects/index.md projects/acme/index.md"}),
+                 ("Bash", {"command": "grep -rn 単価 projects/acme/knowledges"}),
+                 ("Bash", {"command": f"ls {rel}/references/"}),
+                 ("Bash", {"command": f"cd {rel} && find . -name '*.md'"}),
+                 ("Bash", {"command": "ls scripts templates"}),
+                 ("Bash", {"command": "echo projects"})]
+        for tool, inp in allow:
+            self.assertIsNone(self.hook(tool, inp), (tool, inp))
+        # 現在のタスクが無ければ横断は止めない（agent-ws 自体を直すときの grep を邪魔しない）
+        self.ws("task", "done")
+        self.assertIsNone(self.hook("Grep", {"pattern": "単価"}))
+        self.assertIsNone(self.hook("Bash", {"command": "find projects -maxdepth 3"}))
+
+    def test_ref_add_skips_same_source_unless_forced(self):
+        task = self._task()
+        src = self.root / "memo.txt"
+        src.write_text("単価は 10 万円", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "メモ")
+        refs = lambda: [p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md")]  # noqa: E731
+        self.assertEqual(len(refs()), 1)
+        out = self.ws("ref", "add", str(src), "--summary", "メモ").stdout
+        self.assertIn("既にある", out)
+        self.assertIn(refs()[0].name, out)
+        self.assertEqual(len(refs()), 1)
+        time.sleep(1)  # 同じ分に撮ると _SS が付くだけなので、秒違いの名前になるのを待つ
+        self.ws("ref", "add", str(src), "--summary", "メモ", "--force")
+        self.assertEqual(len(refs()), 2)
+
+    def test_statusline_shows_task_context_and_cost(self):
+        task = self._task()
+        payload = json.dumps({"session_id": "s1", "model": {"display_name": "Sonnet 5"},
+                              "context_window": {"used_percentage": 34.6}, "cost": {"total_cost_usd": 0.4171}})
+        out = self.ws("statusline", stdin=payload).stdout.strip()
+        self.assertEqual(out, f"agent-ws {task.name} | Sonnet 5 | ctx 35% | $0.42")
+        # 値が無くても落ちない（セッション冒頭は used_percentage が null）
+        out = self.ws("statusline", stdin='{"context_window": {"used_percentage": null}}').stdout.strip()
+        self.assertEqual(out, f"agent-ws {task.name} | ctx - | $0.00")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,8 +7,8 @@ description: 既存のタスクを別セッションで続けるとき。現在�
 ゴール: `index.md` の「現在地」と「次の一手」だけを頼りに、情報を取り直さずに作業を続けられている状態。
 
 ## 既定の進め方
-1. `scripts/ws task current` で現在のタスクを確認する。別のタスクを続けるなら `scripts/ws task use projects/<project>/tasks/<dir>` のあと、Claude Code なら `/clear`。
-2. そのタスクの `index.md` を読む。「進め方」の未完了の段階と「次の一手」に従う。
+1. 起動時に hook が注入した「現在のタスク」（パスと `index.md` の全文、ナレッジの一覧）を使う。注入が無いときだけ `scripts/ws task current`。別のタスクを続けるなら `scripts/ws task use projects/<project>/tasks/<dir>` のあと、Claude Code なら `/clear`。
+2. 注入された `index.md`（長すぎて注入されなかったときだけ Read する）の「進め方」の未完了の段階と「次の一手」に従う。
 3. 情報源は `index.md` 末尾の一覧（references/）から必要なものだけ開く。同じ情報を Web や資料から取り直さない。
 4. 「次の一手」が読む量が多い段階（未読の references/ を一括で通読するなど）なら researcher に渡す。
 5. 終える前に「進め方」のチェックと「現在地」「次の一手」を更新する。完了なら `scripts/ws task done`。
