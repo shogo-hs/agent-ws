@@ -10,6 +10,7 @@ description: Teams・Zoom などの会議の文字起こし（トランスクリ
 1. 原文を残す: `scripts/ws ref add <file> --kind transcript --summary "会議名 日付"`
 2. 正規化する: `scripts/ws transcript normalize <保存された references/ のパス>`。出力される置換一覧（何を何回直したか）を確認する。
 3. **正規化版（`*.normalized.md`）だけを読む。** 決定事項・宿題（誰が・いつまでに）・論点・出てきた固有名詞を抜き出す。
+   手順 3 の抽出は researcher に渡してよい（正規化版のパスと成果物のパスを指示に含める）。
 4. 意味が取れない語は推測で埋めず、タスクの `index.md` の「未確定の用語」に列挙する。文脈から確定できた誤変換は `scripts/ws glossary add <project> "正式表記" --alias "誤変換" --desc "説明"` で用語集に足し、必要なら normalize をやり直す。
 5. 会議のまとめ（要点・決定事項・宿題）はタスクの中に置く。案件に残る知見（決まった仕様・関係者・手順）は knowledge-promote で `knowledges/` に昇格する。
 

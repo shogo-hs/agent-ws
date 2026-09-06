@@ -22,6 +22,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
    - Claude Code: 初回にフォルダを信頼するか聞かれます。信頼すると `.claude/settings.json` の hooks が有効になります。
    - Codex CLI（0.153 以上）: 初回にフォルダを信頼するか聞かれます。信頼したあと `/hooks` を開き、`.codex/hooks.json` の 4 つの hook を確認して trust します。
      信頼していない hook は警告なしに飛ばされるので、起動時に `[agent-ws] 現在のタスク` の案内が出なければ `/hooks` を見直してください。
+     `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
 
 `projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
 
@@ -35,7 +36,8 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「acme の見積タスクを始めて」 | task-start スキル。`scripts/ws task new acme estimate` でタスクフォルダを作って「現在のタスク」にし、`index.md` の「目的」と「進め方」を書く |
 | 「続きをやって」 | task-resume スキル。起動時に hook が差し込んだ現在のタスクの `index.md` を読み、「次の一手」から再開する |
 | 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）か新しいセッション（Codex）を促す |
-| 「この URL を調べて」「この資料を読んで」 | 読んだあと ref-add スキル。`scripts/ws ref add <URL|ファイル> --summary "…"` で出所・取得日時・原文を `references/` に残す |
+| 「この URL を調べて」「この資料を読んで」 | `scripts/ws ref add <URL>` で本文丸ごとを references/ に残してから読む（WebFetch は hook が止めて ref add に誘導する） |
+| 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-5.4-mini）に渡し、結論と出所だけ受け取る |
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` で用語集に足す |
@@ -72,7 +74,10 @@ agent-ws/
 ├── LESSONS.md             人からの指摘（1 行 1 件。hook が起動のたびに全行を差し込む）
 ├── .claude/settings.json  Claude Code の hooks 登録
 ├── .claude/skills -> ../.agents/skills
+├── .claude/agents/researcher.md  調査係サブエージェント（Claude Code・haiku）
 ├── .codex/hooks.json      Codex CLI の hooks 登録（中身は同じスクリプトを呼ぶ）
+├── .codex/config.toml     Codex CLI のプロジェクト設定（web_search を外す、調査係の既定モデル）
+├── .codex/agents/researcher.toml  調査係サブエージェント（Codex CLI・gpt-5.4-mini）
 ├── .agents/skills/        スキル（両ツール共通の SKILL.md）
 │   ├── task-start/        新しいタスクを切って着手する
 │   ├── task-resume/       既存タスクを index.md から再開する
@@ -91,6 +96,7 @@ agent-ws/
 │           └── <yyyymmdd_slug>/
 │               ├── index.md      目的・進め方・現在地・次の一手・未確定の用語・情報源の一覧
 │               └── references/   集めた情報（出所・取得日時・原文）
+├── docs/                  委譲規則の根拠台帳（URL・取得日時・原文スナップショット）
 ├── tests/test_ws.py       scripts/ws の自己チェック
 └── .ws/                   （git 管理外）最後に設定したタスク（current）と、セッションごとの現在のタスクの写し・最終応答時刻
 ```

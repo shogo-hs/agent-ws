@@ -44,6 +44,10 @@ python3 bench/run.py summary                                                  # 
 python3 bench/run.py fig                                                      # results/fig_*.svg
 ```
 
+`--delegate` を付けると、本線 sonnet が researcher（haiku）に委譲できる条件になります
+（`--allowedTools` に `Agent` を足すだけ。B/C には `.claude/agents/` が無いので何も起きません）。
+委譲なしと同じ tag で走らせて比べてください。
+
 実行ディレクトリは `WS_BENCH_RUNS`（既定 `/var/tmp/agent-ws-bench/runs`）の下に 1 セッション 1 つ組みます。
 作業スペースの中に置くと親の CLAUDE.md が読まれて条件が汚れるので、外に置いてください。
 起動は次のとおりで、グローバルの hooks・プラグイン・MCP を外し、プロジェクトの `.claude/settings.json`（A の hooks）と CLAUDE.md だけを載せます。
@@ -66,6 +70,7 @@ env -u CLAUDECODE claude -p "<依頼文>" --model sonnet|haiku --output-format j
 | other_task | 現在のタスク以外の tasks/ 配下を読んだ回数。C は現在のタスクの資料 2 件と notes/ 以外の docs/。newtask は tasks/ の references/（C は docs/）全部。chain は元からあった tasks/（C は docs/）全部 | 同上 |
 | inbox_reads | inbox/ を読んだ回数（chain の S2 で 0 なら再収集していない） | 同上 |
 | denied | A の hook が拒否した回数 | tool_result の `[agent-ws]` |
+| delegates | Agent ツール（サブエージェントへの委譲）を呼んだ回数。`--delegate` を付けていない実行では常に 0 | transcript の tool_use |
 | verdict | 見積: correct / wrong8 / wrong10 / wrongOld12 / wrongOld8 / mixed / none（最終応答と書き換えたファイルの数字で判定）。newtask: 必須 8 項目の充足数と混入 3 項目の出現（文脈付き。混入は目視で確認する） | 最終応答 + 差分 |
 | left_behind / doc_location | 作成・変更したファイル。newtask は資料の置き場所（current_task / new_task / project_dir / elsewhere / response_only） | 実行前後のツリー差分 |
 

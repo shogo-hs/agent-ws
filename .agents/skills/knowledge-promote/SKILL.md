@@ -11,6 +11,7 @@ description: タスクの中で得た知見を、案件のナレッジ（knowled
 2. 無ければ `scripts/ws know new <project> "タイトル"` で雛形を作る。
 3. 事実だけを書く。`summary` を 1 文で、`source` に出所（references/ のパス、会議名と日付）を書く。`type` は fact（事実・仕様）/ procedure（手順）/ decision（決定と理由）/ contact（関係者と役割）。
 4. 用語なら本文ではなく `scripts/ws glossary add` で用語集に足す。
+5. 数値・仕様は references の「引用した記述」と突き合わせてから書く。
 
 ## つまずきどころ
 - 既存のナレッジと重複して 2 本になる。`knowledges/index.md` を先に見る。

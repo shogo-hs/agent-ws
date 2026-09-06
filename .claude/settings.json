@@ -26,11 +26,23 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Read|Glob|Grep|Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "matcher": "Read|Glob|Grep|Edit|Write|MultiEdit|NotebookEdit|Bash|WebFetch",
         "hooks": [
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook pre-tool-use",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook post-tool-use",
             "timeout": 10
           }
         ]
