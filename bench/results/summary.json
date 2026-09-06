@@ -1,0 +1,2139 @@
+{
+ "groups": {
+  "base/None/large/claude-haiku-4-5-20251001/A": {
+   "in_total": [
+    24462
+   ],
+   "ctx_final": [
+    24462
+   ],
+   "cost_usd": [
+    0.0213107
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/large/claude-haiku-4-5-20251001/B": {
+   "in_total": [
+    21849
+   ],
+   "ctx_final": [
+    21849
+   ],
+   "cost_usd": [
+    0.016024700000000003
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/large/claude-haiku-4-5-20251001/C": {
+   "in_total": [
+    21849
+   ],
+   "ctx_final": [
+    21849
+   ],
+   "cost_usd": [
+    0.0157247
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/large/claude-sonnet-5/A": {
+   "in_total": [
+    32039
+   ],
+   "ctx_final": [
+    32039
+   ],
+   "cost_usd": [
+    0.05128
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/large/claude-sonnet-5/B": {
+   "in_total": [
+    29182
+   ],
+   "ctx_final": [
+    29182
+   ],
+   "cost_usd": [
+    0.039852
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/large/claude-sonnet-5/C": {
+   "in_total": [
+    29182
+   ],
+   "ctx_final": [
+    29182
+   ],
+   "cost_usd": [
+    0.039852
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/small/claude-sonnet-5/A": {
+   "in_total": [
+    32039
+   ],
+   "ctx_final": [
+    32039
+   ],
+   "cost_usd": [
+    0.05128
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/small/claude-sonnet-5/B": {
+   "in_total": [
+    29182
+   ],
+   "ctx_final": [
+    29182
+   ],
+   "cost_usd": [
+    0.039852
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "base/None/small/claude-sonnet-5/C": {
+   "in_total": [
+    29182
+   ],
+   "ctx_final": [
+    29182
+   ],
+   "cost_usd": [
+    0.039852
+   ],
+   "turns": [
+    1
+   ],
+   "reads": [
+    0
+   ],
+   "searches": [
+    0
+   ],
+   "other_task": [
+    0
+   ],
+   "inbox_reads": [
+    0
+   ],
+   "denied": [
+    0
+   ],
+   "verdict": [
+    "none"
+   ],
+   "required_n": [
+    null
+   ],
+   "stale_n": [
+    null
+   ],
+   "doc_location": [
+    null
+   ]
+  },
+  "chain/1/large/claude-sonnet-5/A": {
+   "in_total": [
+    360116,
+    447756,
+    400571,
+    405873,
+    359817
+   ],
+   "ctx_final": [
+    40342,
+    41587,
+    41111,
+    41600,
+    40248
+   ],
+   "cost_usd": [
+    0.18428920000000001,
+    0.2102654,
+    0.19646600000000003,
+    0.20080460000000003,
+    0.1837922
+   ],
+   "turns": [
+    10,
+    12,
+    11,
+    11,
+    10
+   ],
+   "reads": [
+    7,
+    6,
+    7,
+    8,
+    7
+   ],
+   "searches": [
+    1,
+    0,
+    0,
+    1,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    3,
+    3,
+    3,
+    3,
+    3
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "chain/1/large/claude-sonnet-5/B": {
+   "in_total": [
+    610686,
+    505451,
+    536934,
+    368329,
+    861142
+   ],
+   "ctx_final": [
+    56710,
+    56787,
+    50606,
+    42635,
+    68186
+   ],
+   "cost_usd": [
+    0.33072539999999995,
+    0.3247988,
+    0.30936980000000003,
+    0.22656320000000002,
+    0.4850598
+   ],
+   "turns": [
+    13,
+    11,
+    13,
+    10,
+    17
+   ],
+   "reads": [
+    16,
+    13,
+    14,
+    10,
+    18
+   ],
+   "searches": [
+    5,
+    3,
+    5,
+    3,
+    7
+   ],
+   "other_task": [
+    4,
+    3,
+    4,
+    2,
+    8
+   ],
+   "inbox_reads": [
+    7,
+    6,
+    7,
+    4,
+    6
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "chain/1/large/claude-sonnet-5/C": {
+   "in_total": [
+    471063,
+    394492,
+    439551,
+    499090,
+    371882
+   ],
+   "ctx_final": [
+    52137,
+    54049,
+    53048,
+    57367,
+    61515
+   ],
+   "cost_usd": [
+    0.31981980000000004,
+    0.303554,
+    0.2781856,
+    0.3249856,
+    0.28843919999999995
+   ],
+   "turns": [
+    12,
+    10,
+    11,
+    11,
+    9
+   ],
+   "reads": [
+    11,
+    16,
+    11,
+    11,
+    12
+   ],
+   "searches": [
+    5,
+    3,
+    5,
+    3,
+    3
+   ],
+   "other_task": [
+    1,
+    5,
+    2,
+    1,
+    2
+   ],
+   "inbox_reads": [
+    8,
+    6,
+    6,
+    6,
+    6
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "chain/2/large/claude-sonnet-5/A": {
+   "in_total": [
+    319219,
+    324568,
+    399490,
+    328833,
+    565949
+   ],
+   "ctx_final": [
+    39596,
+    40484,
+    39915,
+    40604,
+    43740
+   ],
+   "cost_usd": [
+    0.15446420000000002,
+    0.1609884,
+    0.1689278,
+    0.15991740000000002,
+    0.248079
+   ],
+   "turns": [
+    9,
+    9,
+    11,
+    9,
+    15
+   ],
+   "reads": [
+    4,
+    6,
+    5,
+    6,
+    4
+   ],
+   "searches": [
+    1,
+    1,
+    0,
+    1,
+    6
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "chain/2/large/claude-sonnet-5/B": {
+   "in_total": [
+    942720,
+    701017,
+    1008388,
+    566803,
+    590245
+   ],
+   "ctx_final": [
+    76226,
+    56274,
+    65865,
+    57771,
+    55260
+   ],
+   "cost_usd": [
+    0.5460912,
+    0.5683847000000001,
+    0.45981020000000006,
+    0.30598580000000003,
+    0.3227446
+   ],
+   "turns": [
+    17,
+    16,
+    19,
+    12,
+    14
+   ],
+   "reads": [
+    19,
+    11,
+    13,
+    9,
+    10
+   ],
+   "searches": [
+    6,
+    3,
+    3,
+    2,
+    6
+   ],
+   "other_task": [
+    2,
+    1,
+    2,
+    2,
+    1
+   ],
+   "inbox_reads": [
+    6,
+    2,
+    2,
+    0,
+    2
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "chain/2/large/claude-sonnet-5/C": {
+   "in_total": [
+    567511,
+    460392,
+    449544,
+    505126,
+    132657
+   ],
+   "ctx_final": [
+    59861,
+    54347,
+    59591,
+    42146,
+    37000
+   ],
+   "cost_usd": [
+    0.34462440000000005,
+    0.2944688,
+    0.3169578,
+    0.21754260000000003,
+    0.08456300000000001
+   ],
+   "turns": [
+    12,
+    11,
+    10,
+    14,
+    4
+   ],
+   "reads": [
+    18,
+    17,
+    14,
+    4,
+    3
+   ],
+   "searches": [
+    2,
+    6,
+    4,
+    7,
+    2
+   ],
+   "other_task": [
+    1,
+    3,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    5,
+    3,
+    2,
+    2,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "newtask/None/large/claude-sonnet-5/A": {
+   "in_total": [
+    342265,
+    328416,
+    299052,
+    222719,
+    291755
+   ],
+   "ctx_final": [
+    43608,
+    41696,
+    43638,
+    42256,
+    41547
+   ],
+   "cost_usd": [
+    0.23274620000000001,
+    0.2057708,
+    0.21704400000000001,
+    0.19548859999999998,
+    0.19392879999999998
+   ],
+   "turns": [
+    9,
+    9,
+    8,
+    6,
+    8
+   ],
+   "reads": [
+    7,
+    5,
+    7,
+    5,
+    6
+   ],
+   "searches": [
+    1,
+    2,
+    1,
+    0,
+    1
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    1,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "required_n": [
+    8,
+    8,
+    8,
+    8,
+    8
+   ],
+   "stale_n": [
+    0,
+    1,
+    1,
+    2,
+    2
+   ],
+   "doc_location": [
+    "new_task",
+    "new_task",
+    "new_task",
+    "new_task",
+    "new_task"
+   ]
+  },
+  "newtask/None/large/claude-sonnet-5/B": {
+   "in_total": [
+    481185,
+    530259,
+    337744,
+    417139,
+    644701
+   ],
+   "ctx_final": [
+    57903,
+    54303,
+    44240,
+    52127,
+    71021
+   ],
+   "cost_usd": [
+    0.3484934,
+    0.33972680000000005,
+    0.24132860000000003,
+    0.3085168,
+    0.4569122
+   ],
+   "turns": [
+    11,
+    12,
+    9,
+    10,
+    13
+   ],
+   "reads": [
+    15,
+    14,
+    6,
+    10,
+    15
+   ],
+   "searches": [
+    3,
+    4,
+    4,
+    4,
+    4
+   ],
+   "other_task": [
+    7,
+    7,
+    0,
+    1,
+    7
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "required_n": [
+    8,
+    8,
+    8,
+    8,
+    8
+   ],
+   "stale_n": [
+    1,
+    0,
+    1,
+    0,
+    3
+   ],
+   "doc_location": [
+    "response_only",
+    "new_task",
+    "new_task",
+    "response_only",
+    "new_task"
+   ]
+  },
+  "newtask/None/large/claude-sonnet-5/C": {
+   "in_total": [
+    273106,
+    377272,
+    303558,
+    400896,
+    461568
+   ],
+   "ctx_final": [
+    69709,
+    71948,
+    70035,
+    64017,
+    60129
+   ],
+   "cost_usd": [
+    0.33592239999999995,
+    0.38592099999999996,
+    0.3408452,
+    0.331098,
+    0.3398852
+   ],
+   "turns": [
+    6,
+    8,
+    7,
+    8,
+    10
+   ],
+   "reads": [
+    10,
+    11,
+    11,
+    13,
+    11
+   ],
+   "searches": [
+    2,
+    3,
+    3,
+    2,
+    2
+   ],
+   "other_task": [
+    5,
+    5,
+    6,
+    8,
+    2
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "required_n": [
+    8,
+    8,
+    8,
+    8,
+    8
+   ],
+   "stale_n": [
+    3,
+    0,
+    2,
+    4,
+    2
+   ],
+   "doc_location": [
+    "project_dir",
+    "project_dir",
+    "project_dir",
+    "project_dir",
+    "project_dir"
+   ]
+  },
+  "trap/None/large/claude-haiku-4-5-20251001/A": {
+   "in_total": [
+    164138,
+    107659,
+    165004,
+    138080,
+    192122
+   ],
+   "ctx_final": [
+    30031,
+    29660,
+    30750,
+    30550,
+    30194
+   ],
+   "cost_usd": [
+    0.0628592,
+    0.056412,
+    0.0671778,
+    0.0618523,
+    0.06597950000000001
+   ],
+   "turns": [
+    6,
+    4,
+    6,
+    5,
+    7
+   ],
+   "reads": [
+    3,
+    3,
+    3,
+    4,
+    3
+   ],
+   "searches": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-haiku-4-5-20251001/B": {
+   "in_total": [
+    21858,
+    21858,
+    21858,
+    21858,
+    21858
+   ],
+   "ctx_final": [
+    21858,
+    21858,
+    21858,
+    21858,
+    21858
+   ],
+   "cost_usd": [
+    0.0184767,
+    0.0178667,
+    0.0177417,
+    0.0179117,
+    0.0180367
+   ],
+   "turns": [
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "searches": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-haiku-4-5-20251001/C": {
+   "in_total": [
+    21858,
+    21858,
+    21858,
+    21858,
+    21858
+   ],
+   "ctx_final": [
+    21858,
+    21858,
+    21858,
+    21858,
+    21858
+   ],
+   "cost_usd": [
+    0.0180117,
+    0.017826699999999997,
+    0.0178267,
+    0.018146699999999998,
+    0.0181617
+   ],
+   "turns": [
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "searches": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-sonnet-5/A": {
+   "in_total": [
+    205620,
+    241660,
+    241979,
+    318571,
+    242553
+   ],
+   "ctx_final": [
+    37969,
+    37758,
+    37879,
+    38871,
+    38186
+   ],
+   "cost_usd": [
+    0.13715819999999998,
+    0.139648,
+    0.1408516,
+    0.1661768,
+    0.143353
+   ],
+   "turns": [
+    6,
+    7,
+    7,
+    9,
+    7
+   ],
+   "reads": [
+    4,
+    4,
+    4,
+    5,
+    5
+   ],
+   "searches": [
+    0,
+    0,
+    0,
+    1,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-sonnet-5/B": {
+   "in_total": [
+    59159,
+    213276,
+    249040,
+    294279,
+    171431
+   ],
+   "ctx_final": [
+    29967,
+    42830,
+    41703,
+    43852,
+    40259
+   ],
+   "cost_usd": [
+    0.055648,
+    0.17541520000000002,
+    0.159254,
+    0.19006659999999997,
+    0.14073280000000002
+   ],
+   "turns": [
+    2,
+    6,
+    7,
+    8,
+    5
+   ],
+   "reads": [
+    1,
+    14,
+    9,
+    9,
+    4
+   ],
+   "searches": [
+    1,
+    2,
+    2,
+    3,
+    1
+   ],
+   "other_task": [
+    0,
+    4,
+    3,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "correct",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-sonnet-5/C": {
+   "in_total": [
+    132003,
+    132989,
+    132890,
+    172318,
+    176315
+   ],
+   "ctx_final": [
+    36941,
+    38167,
+    38022,
+    39481,
+    43316
+   ],
+   "cost_usd": [
+    0.10404519999999999,
+    0.11147119999999999,
+    0.11438040000000001,
+    0.1225588,
+    0.14504620000000001
+   ],
+   "turns": [
+    4,
+    4,
+    4,
+    5,
+    5
+   ],
+   "reads": [
+    2,
+    3,
+    3,
+    3,
+    4
+   ],
+   "searches": [
+    1,
+    0,
+    0,
+    1,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/small/claude-sonnet-5/A": {
+   "in_total": [
+    280852,
+    172396,
+    318840,
+    279253,
+    242016
+   ],
+   "ctx_final": [
+    38626,
+    37686,
+    38996,
+    38321,
+    37878
+   ],
+   "cost_usd": [
+    0.1542784,
+    0.12415440000000001,
+    0.1664656,
+    0.1520996,
+    0.14114520000000003
+   ],
+   "turns": [
+    8,
+    5,
+    9,
+    8,
+    7
+   ],
+   "reads": [
+    5,
+    4,
+    5,
+    5,
+    4
+   ],
+   "searches": [
+    1,
+    0,
+    1,
+    1,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/small/claude-sonnet-5/B": {
+   "in_total": [
+    318714,
+    329075,
+    287392,
+    326018,
+    58972
+   ],
+   "ctx_final": [
+    48248,
+    41612,
+    41544,
+    41578,
+    29780
+   ],
+   "cost_usd": [
+    0.2326284,
+    0.19576739999999998,
+    0.1926088,
+    0.1923268,
+    0.05542
+   ],
+   "turns": [
+    8,
+    9,
+    8,
+    9,
+    2
+   ],
+   "reads": [
+    14,
+    10,
+    8,
+    8,
+    1
+   ],
+   "searches": [
+    0,
+    1,
+    0,
+    2,
+    1
+   ],
+   "other_task": [
+    2,
+    0,
+    0,
+    1,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/small/claude-sonnet-5/C": {
+   "in_total": [
+    58734,
+    246525,
+    165959,
+    58974,
+    127628
+   ],
+   "ctx_final": [
+    29542,
+    44111,
+    37732,
+    29782,
+    35640
+   ],
+   "cost_usd": [
+    0.052378,
+    0.1720164,
+    0.12458080000000002,
+    0.054678000000000004,
+    0.1020964
+   ],
+   "turns": [
+    2,
+    7,
+    5,
+    2,
+    4
+   ],
+   "reads": [
+    1,
+    3,
+    7,
+    1,
+    4
+   ],
+   "searches": [
+    0,
+    5,
+    0,
+    1,
+    1
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ },
+ "pairs": {
+  "base/None/large/claude-haiku-4-5-20251001/A-B": {
+   "in_total": null,
+   "cost_usd": null,
+   "other_task": null
+  },
+  "base/None/large/claude-haiku-4-5-20251001/A-C": {
+   "in_total": null,
+   "cost_usd": null,
+   "other_task": null
+  },
+  "base/None/large/claude-sonnet-5/A-B": {
+   "in_total": null,
+   "cost_usd": null,
+   "other_task": null
+  },
+  "base/None/large/claude-sonnet-5/A-C": {
+   "in_total": null,
+   "cost_usd": null,
+   "other_task": null
+  },
+  "base/None/small/claude-sonnet-5/A-B": {
+   "in_total": null,
+   "cost_usd": null,
+   "other_task": null
+  },
+  "base/None/small/claude-sonnet-5/A-C": {
+   "in_total": null,
+   "cost_usd": null,
+   "other_task": null
+  },
+  "chain/1/large/claude-sonnet-5/A-B": {
+   "in_total": 0.031746031746031744,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 0.007936507936507936
+  },
+  "chain/1/large/claude-sonnet-5/A-C": {
+   "in_total": 0.1984126984126984,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 0.007936507936507936
+  },
+  "chain/2/large/claude-sonnet-5/A-B": {
+   "in_total": 0.007936507936507936,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 0.007936507936507936
+  },
+  "chain/2/large/claude-sonnet-5/A-C": {
+   "in_total": 0.7301587301587301,
+   "cost_usd": 0.1984126984126984,
+   "other_task": 0.4444444444444444
+  },
+  "newtask/None/large/claude-sonnet-5/A-B": {
+   "in_total": 0.015873015873015872,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 0.047619047619047616
+  },
+  "newtask/None/large/claude-sonnet-5/A-C": {
+   "in_total": 0.12698412698412698,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 0.007936507936507936
+  },
+  "trap/None/large/claude-haiku-4-5-20251001/A-B": {
+   "in_total": 0.007936507936507936,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 1.0
+  },
+  "trap/None/large/claude-haiku-4-5-20251001/A-C": {
+   "in_total": 0.007936507936507936,
+   "cost_usd": 0.007936507936507936,
+   "other_task": 1.0
+  },
+  "trap/None/large/claude-sonnet-5/A-B": {
+   "in_total": 0.2857142857142857,
+   "cost_usd": 0.9682539682539683,
+   "other_task": 0.4444444444444444
+  },
+  "trap/None/large/claude-sonnet-5/A-C": {
+   "in_total": 0.007936507936507936,
+   "cost_usd": 0.03968253968253968,
+   "other_task": 1.0
+  },
+  "trap/None/small/claude-sonnet-5/A-B": {
+   "in_total": 0.9206349206349206,
+   "cost_usd": 0.46825396825396826,
+   "other_task": 0.4444444444444444
+  },
+  "trap/None/small/claude-sonnet-5/A-C": {
+   "in_total": 0.023809523809523808,
+   "cost_usd": 0.1111111111111111,
+   "other_task": 1.0
+  }
+ }
+}

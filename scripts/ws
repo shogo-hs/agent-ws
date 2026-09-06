@@ -634,6 +634,16 @@ def cmd_hook_pre_tool_use(args):
                 CURRENT.write_text(copy.read_text(encoding="utf-8"), encoding="utf-8")
             copy.unlink(missing_ok=True)
         return  # ws 自身によるタスク操作は通す
+    # bench/ は計測用の架空の案件。仕事中（現在のタスクがある間）に読むと実案件と混ざり、トークンも無駄になる。
+    # ROOT からの相対で見る（/var/tmp/agent-ws-bench/ のような外のパスには当てない）
+    if re.search(r"(?<![\w.-])bench/", blob.replace(str(ROOT) + "/", "")) and current_task(sid):
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "[agent-ws] bench/ は計測用の架空の材料（案件・タスク・資料）。仕事では読まない。"
+                                        "agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。",
+        }}, ensure_ascii=False))
+        return
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
     if not hits:
         return
