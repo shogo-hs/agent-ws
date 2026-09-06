@@ -231,6 +231,16 @@ class WsFlowTest(unittest.TestCase):
         r = self.ws("hook", "user-prompt-submit", stdin=ev("UserPromptSubmit", prompt="x"), check=False)
         self.assertEqual(r.returncode, 0)
 
+    def test_bench_is_off_limits_while_a_task_is_current(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "kickoff")
+        self.assertEqual(self.hook("Read", {"file_path": "bench/corpus/projects/acme/index.md"}), "deny")
+        self.assertEqual(self.hook("Bash", {"command": "grep -r 見積 bench/"}), "deny")
+        self.assertEqual(self.hook("Read", {"file_path": str(self.root / "bench/README.md")}), "deny")
+        self.assertIsNone(self.hook("Bash", {"command": "ls /var/tmp/agent-ws-bench/runs"}))  # 外のパスは止めない
+        self.ws("task", "done")
+        self.assertIsNone(self.hook("Read", {"file_path": "bench/corpus/projects/acme/index.md"}))  # 保守中は通す
+
     def test_hook_is_fail_open_on_garbage(self):
         r = self.ws("hook", "pre-tool-use", stdin="not json")
         self.assertEqual(r.returncode, 0)

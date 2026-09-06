@@ -1,0 +1,190 @@
+<svg viewBox="0 0 700 544" role="img" aria-label="現在のタスク以外に立ち入った回数" font-family="-apple-system, BlinkMacSystemFont, Hiragino Sans, Noto Sans JP, sans-serif" font-size="12">
+<text x="8" y="16" fill="var(--muted)">現在のタスク以外に立ち入った回数（点 = 1 回の実行、縦線 = 中央値。左ほど少ない）</text>
+<text x="8" y="56" fill="var(--ink)" font-weight="600">引き継ぎの 1 セッション目・large・sonnet</text>
+<text x="252" y="49" text-anchor="end" fill="var(--accent)">agent-ws</text>
+<line x1="260" x2="680" y1="45" y2="45" stroke="var(--line)"/>
+<circle cx="260.0" cy="45" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="45" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="45" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="45" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="45" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="36" y2="54" stroke="var(--accent)" stroke-width="2.5"/>
+<text x="686" y="49" fill="var(--accent)" font-size="11">0</text>
+<text x="252" y="71" text-anchor="end" fill="var(--warn)">同じ構造・仕組みなし</text>
+<line x1="260" x2="680" y1="67" y2="67" stroke="var(--line)"/>
+<circle cx="470.0" cy="67" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="417.5" cy="67" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="470.0" cy="67" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="365.0" cy="67" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="680.0" cy="67" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<line x1="470.0" x2="470.0" y1="58" y2="76" stroke="var(--warn)" stroke-width="2.5"/>
+<text x="686" y="71" fill="var(--warn)" font-size="11">4</text>
+<text x="252" y="93" text-anchor="end" fill="var(--muted)">導入前（資料の山＋メモ）</text>
+<line x1="260" x2="680" y1="89" y2="89" stroke="var(--line)"/>
+<circle cx="312.5" cy="89" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="522.5" cy="89" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="365.0" cy="89" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="312.5" cy="89" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="365.0" cy="89" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<line x1="365.0" x2="365.0" y1="80" y2="98" stroke="var(--muted)" stroke-width="2.5"/>
+<text x="686" y="93" fill="var(--muted)" font-size="11">2</text>
+<text x="8" y="136" fill="var(--ink)" font-weight="600">引き継ぎの 2 セッション目・large・sonnet</text>
+<text x="252" y="129" text-anchor="end" fill="var(--accent)">agent-ws</text>
+<line x1="260" x2="680" y1="125" y2="125" stroke="var(--line)"/>
+<circle cx="260.0" cy="125" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="125" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="125" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="125" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="125" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="116" y2="134" stroke="var(--accent)" stroke-width="2.5"/>
+<text x="686" y="129" fill="var(--accent)" font-size="11">0</text>
+<text x="252" y="151" text-anchor="end" fill="var(--warn)">同じ構造・仕組みなし</text>
+<line x1="260" x2="680" y1="147" y2="147" stroke="var(--line)"/>
+<circle cx="365.0" cy="147" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="312.5" cy="147" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="365.0" cy="147" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="365.0" cy="147" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="312.5" cy="147" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<line x1="365.0" x2="365.0" y1="138" y2="156" stroke="var(--warn)" stroke-width="2.5"/>
+<text x="686" y="151" fill="var(--warn)" font-size="11">2</text>
+<text x="252" y="173" text-anchor="end" fill="var(--muted)">導入前（資料の山＋メモ）</text>
+<line x1="260" x2="680" y1="169" y2="169" stroke="var(--line)"/>
+<circle cx="312.5" cy="169" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="417.5" cy="169" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="169" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="169" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="169" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="160" y2="178" stroke="var(--muted)" stroke-width="2.5"/>
+<text x="686" y="173" fill="var(--muted)" font-size="11">0</text>
+<text x="8" y="216" fill="var(--ink)" font-weight="600">新規タスク（進め方の資料）・large・sonnet</text>
+<text x="252" y="209" text-anchor="end" fill="var(--accent)">agent-ws</text>
+<line x1="260" x2="680" y1="205" y2="205" stroke="var(--line)"/>
+<circle cx="260.0" cy="205" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="205" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="205" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="205" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="205" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="196" y2="214" stroke="var(--accent)" stroke-width="2.5"/>
+<text x="686" y="209" fill="var(--accent)" font-size="11">0</text>
+<text x="252" y="231" text-anchor="end" fill="var(--warn)">同じ構造・仕組みなし</text>
+<line x1="260" x2="680" y1="227" y2="227" stroke="var(--line)"/>
+<circle cx="627.5" cy="227" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="627.5" cy="227" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="227" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="312.5" cy="227" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="627.5" cy="227" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<line x1="627.5" x2="627.5" y1="218" y2="236" stroke="var(--warn)" stroke-width="2.5"/>
+<text x="686" y="231" fill="var(--warn)" font-size="11">7</text>
+<text x="252" y="253" text-anchor="end" fill="var(--muted)">導入前（資料の山＋メモ）</text>
+<line x1="260" x2="680" y1="249" y2="249" stroke="var(--line)"/>
+<circle cx="522.5" cy="249" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="522.5" cy="249" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="575.0" cy="249" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="680.0" cy="249" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="365.0" cy="249" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<line x1="522.5" x2="522.5" y1="240" y2="258" stroke="var(--muted)" stroke-width="2.5"/>
+<text x="686" y="253" fill="var(--muted)" font-size="11">5</text>
+<text x="8" y="296" fill="var(--ink)" font-weight="600">続きをやって（罠）・large・haiku</text>
+<text x="252" y="289" text-anchor="end" fill="var(--accent)">agent-ws</text>
+<line x1="260" x2="680" y1="285" y2="285" stroke="var(--line)"/>
+<circle cx="260.0" cy="285" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="285" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="285" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="285" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="285" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="276" y2="294" stroke="var(--accent)" stroke-width="2.5"/>
+<text x="686" y="289" fill="var(--accent)" font-size="11">0</text>
+<text x="252" y="311" text-anchor="end" fill="var(--warn)">同じ構造・仕組みなし</text>
+<line x1="260" x2="680" y1="307" y2="307" stroke="var(--line)"/>
+<circle cx="260.0" cy="307" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="307" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="307" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="307" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="307" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="298" y2="316" stroke="var(--warn)" stroke-width="2.5"/>
+<text x="686" y="311" fill="var(--warn)" font-size="11">0</text>
+<text x="252" y="333" text-anchor="end" fill="var(--muted)">導入前（資料の山＋メモ）</text>
+<line x1="260" x2="680" y1="329" y2="329" stroke="var(--line)"/>
+<circle cx="260.0" cy="329" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="329" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="329" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="329" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="329" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="320" y2="338" stroke="var(--muted)" stroke-width="2.5"/>
+<text x="686" y="333" fill="var(--muted)" font-size="11">0</text>
+<text x="8" y="376" fill="var(--ink)" font-weight="600">続きをやって（罠）・large・sonnet</text>
+<text x="252" y="369" text-anchor="end" fill="var(--accent)">agent-ws</text>
+<line x1="260" x2="680" y1="365" y2="365" stroke="var(--line)"/>
+<circle cx="260.0" cy="365" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="365" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="365" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="365" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="365" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="356" y2="374" stroke="var(--accent)" stroke-width="2.5"/>
+<text x="686" y="369" fill="var(--accent)" font-size="11">0</text>
+<text x="252" y="391" text-anchor="end" fill="var(--warn)">同じ構造・仕組みなし</text>
+<line x1="260" x2="680" y1="387" y2="387" stroke="var(--line)"/>
+<circle cx="260.0" cy="387" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="470.0" cy="387" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="417.5" cy="387" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="387" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="387" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="378" y2="396" stroke="var(--warn)" stroke-width="2.5"/>
+<text x="686" y="391" fill="var(--warn)" font-size="11">0</text>
+<text x="252" y="413" text-anchor="end" fill="var(--muted)">導入前（資料の山＋メモ）</text>
+<line x1="260" x2="680" y1="409" y2="409" stroke="var(--line)"/>
+<circle cx="260.0" cy="409" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="409" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="409" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="409" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="409" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="400" y2="418" stroke="var(--muted)" stroke-width="2.5"/>
+<text x="686" y="413" fill="var(--muted)" font-size="11">0</text>
+<text x="8" y="456" fill="var(--ink)" font-weight="600">続きをやって（罠）・small・sonnet</text>
+<text x="252" y="449" text-anchor="end" fill="var(--accent)">agent-ws</text>
+<line x1="260" x2="680" y1="445" y2="445" stroke="var(--line)"/>
+<circle cx="260.0" cy="445" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="445" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="445" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="445" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="445" r="4.5" fill="var(--accent)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="436" y2="454" stroke="var(--accent)" stroke-width="2.5"/>
+<text x="686" y="449" fill="var(--accent)" font-size="11">0</text>
+<text x="252" y="471" text-anchor="end" fill="var(--warn)">同じ構造・仕組みなし</text>
+<line x1="260" x2="680" y1="467" y2="467" stroke="var(--line)"/>
+<circle cx="365.0" cy="467" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="467" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="467" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="312.5" cy="467" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="467" r="4.5" fill="var(--warn)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="458" y2="476" stroke="var(--warn)" stroke-width="2.5"/>
+<text x="686" y="471" fill="var(--warn)" font-size="11">0</text>
+<text x="252" y="493" text-anchor="end" fill="var(--muted)">導入前（資料の山＋メモ）</text>
+<line x1="260" x2="680" y1="489" y2="489" stroke="var(--line)"/>
+<circle cx="260.0" cy="489" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="489" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="489" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="489" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<circle cx="260.0" cy="489" r="4.5" fill="var(--muted)" fill-opacity="0.55"/>
+<line x1="260.0" x2="260.0" y1="480" y2="498" stroke="var(--muted)" stroke-width="2.5"/>
+<text x="686" y="493" fill="var(--muted)" font-size="11">0</text>
+<line x1="260.0" x2="260.0" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="260.0" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">0</text>
+<line x1="312.5" x2="312.5" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="312.5" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">1</text>
+<line x1="365.0" x2="365.0" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="365.0" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">2</text>
+<line x1="417.5" x2="417.5" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="417.5" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">3</text>
+<line x1="470.0" x2="470.0" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="470.0" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">4</text>
+<line x1="522.5" x2="522.5" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="522.5" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">5</text>
+<line x1="575.0" x2="575.0" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="575.0" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">6</text>
+<line x1="627.5" x2="627.5" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="627.5" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">7</text>
+<line x1="680.0" x2="680.0" y1="514" y2="519" stroke="var(--muted)"/>
+<text x="680.0" y="532" text-anchor="middle" fill="var(--muted)" font-size="11">8</text>
+<text x="680" y="532" fill="var(--muted)" font-size="11"> 回</text>
+</svg>
