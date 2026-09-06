@@ -768,6 +768,25 @@ class WsFlowTest(unittest.TestCase):
         out = self.ws("statusline", stdin='{"context_window": {"used_percentage": null}}').stdout.strip()
         self.assertEqual(out, f"agent-ws {task.name} | ctx - | $0.00")
 
+    def test_doctor_skips_quote_check_for_oldest_format_reference(self):
+        """「## 要点」だけの最初期の形式（bench の corpus や導入前からの reference）に「引用した記述」の警告を出さない。
+        出すとエージェントが雛形を読んで新形式へ作り替え始め、trap のターンが 7 → 18〜23 に膨らんだ（ts6-main）。"""
+        task = self._task()
+        old = task / "references" / "20260101_0000_oldest.md"
+        old.write_text('---\ntitle: "最初期"\nkind: file\nsource: "共有フォルダ/x.xlsx"\nretrieved_at: "2026-01-01T00:00:00+09:00"\n'
+                       'retrieved_by: claude-code\nsummary: "最初期の形式"\n---\n# 最初期\n\n## 要点\n（読み手が埋める）\n\n'
+                       '## 原文（改変しない）\n単価 10 万円\n', encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        # 新形式（ref add が作る。節はあるが未記入）は従来どおり警告する
+        src = self.root / "memo.txt"
+        src.write_text("単価は 10 万円", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "メモ")
+        r = self.ws("doctor", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("「引用した記述」節が未記入のまま", r.stdout)
+        self.assertNotIn("oldest.md", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -650,8 +650,11 @@ def cmd_doctor(args):
                 is_old_format_body = bool(raw_orig_section) and not raw_orig_section.startswith("原文: ")
                 if not has_orig and not is_old_format_body:
                     problems.append(f"{rel(rf)}: 原文が無い（.orig.md も原文節も空）")
+                # 「引用した記述」の節そのものが無い最初期の形式（「## 要点」だけ）は検査しない。
+                # 警告するとエージェントが雛形を読みに行って新形式へ作り替え始め、bench の trap でターンが 7 → 18〜23 に膨らんだ
                 quote = _section_raw(rbody, "引用した記述（原文のまま。要約しない）").strip()
-                if not quote or (quote.startswith("（") and quote.endswith("）")):
+                has_quote_section = bool(re.search(r"^##\s+引用した記述", rbody, re.M))
+                if has_quote_section and (not quote or (quote.startswith("（") and quote.endswith("）"))):
                     problems.append(f"{rel(rf)}: 「引用した記述」節が未記入のまま")
                 if not rmeta.get("summary"):
                     problems.append(f"{rel(rf)}: frontmatter の summary が空")
