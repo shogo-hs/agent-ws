@@ -195,6 +195,10 @@ class WsFlowTest(unittest.TestCase):
         self.assertNotIn("status: done", (y / "index.md").read_text(encoding="utf-8"))
         self.assertIn(y.name, self.ws("task", "current", env=e2).stdout)
         self.assertEqual(self.ws("task", "current", env=e1, check=False).returncode, 1)
+        # 完了したセッションは、他のセッションが .ws/current を書いても拾わない（未設定のまま）
+        self.ws("task", "use", f"projects/acme/tasks/{y.name}", env=e2)
+        self.assertEqual(self.ws("task", "current", env=e1, check=False).returncode, 1)
+        self.assertEqual(self.hook("Read", {"file_path": str(y / "index.md")}, sid=s1), "deny")
 
     def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
         sid = "sess-1"
