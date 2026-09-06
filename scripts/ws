@@ -885,7 +885,7 @@ def cmd_hook_pre_tool_use(args):
     # docs/snapshots/ は agent-ws 自体の規則の根拠（Web ページの原文、数十 KB〜）。案件の仕事で grep が当たると丸ごと読んでしまう
     if re.search(r"(?<![\w.-])docs/snapshots(?![\w.-])", blob.replace(str(ROOT) + "/", "")) and cur:
         _deny("[agent-ws] docs/snapshots/ は agent-ws 自体の規則の根拠（Web ページの原文）。案件の仕事では読まない"
-              "（台帳は docs/*.md）。agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。")
+              "（台帳は docs/sources/）。agent-ws 自体を直すために要るなら scripts/ws task done で現在のタスクを外してから。")
         return
     cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}

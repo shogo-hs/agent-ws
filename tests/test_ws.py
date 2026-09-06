@@ -235,11 +235,12 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
 
     def test_docs_snapshots_are_off_limits_while_a_task_is_current(self):
-        """規則の根拠（Web ページの原文）は案件の仕事では読まない。台帳（docs/*.md）は読める。"""
+        """規則の根拠（Web ページの原文）は案件の仕事では読まない。台帳（docs/sources/）は読める。"""
         snap = self.root / "docs/snapshots/20260101_0000_page.orig.md"
         snap.parent.mkdir(parents=True)
         snap.write_text("原文\n", encoding="utf-8")
-        ledger = self.root / "docs/sources.md"
+        ledger = self.root / "docs/sources/delegation.md"
+        ledger.parent.mkdir()
         ledger.write_text("台帳\n", encoding="utf-8")
         self.assertIsNone(self.hook("Read", {"file_path": str(snap)}))  # タスク未設定なら読める
         self.ws("project", "new", "acme")
