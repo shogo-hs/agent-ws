@@ -23,6 +23,9 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("WS_ROOT") or Path(__file__).resolve().parent.parent).resolve()
 PROJECTS = ROOT / "projects"
+# 案件をまたぐ自社の事実（組織図・決裁範囲・社内システム・標準手順・共通用語）。案件と同じ形で、案件側と重なれば案件側が勝つ（ADR 0015）
+COMMON = ROOT / "knowledges"
+COMMON_STALE_DAYS = 90  # 共通ナレッジの updated がこれを超えたら doctor が警告する（3 ヶ月変わらない事実だけを載せる）
 TEMPLATES = ROOT / "templates"
 CURRENT = ROOT / ".ws" / "current"
 IDX_BEGIN = "<!-- ws:index -->"
@@ -97,6 +100,13 @@ def project_dir(name: str) -> Path:
     if not p.is_dir():
         die(f"案件 {name} が無い。scripts/ws project new {name} で作る")
     return p
+
+
+def common_dir() -> Path:
+    """共通ナレッジのフォルダ。index.md が無ければ雛形から作る（--common の書き込みは全部ここを通る）。"""
+    if not (COMMON / "index.md").exists():
+        write(COMMON / "index.md", render(TEMPLATES / "common" / "index.md"))
+    return COMMON
 
 
 def _sess(sid: str, kind: str) -> Path:
@@ -192,7 +202,7 @@ def cmd_index(args):
     if args.dir:
         targets = [Path(args.dir).resolve()]
     else:
-        targets = [p.parent for p in PROJECTS.rglob("index.md")]
+        targets = [p.parent for p in PROJECTS.rglob("index.md")] + [COMMON]
     n = sum(update_index(d) for d in targets)
     print(f"index.md を {n} 件更新した")
 
@@ -477,12 +487,11 @@ def cmd_ref_split(args):
 
 # ---- 用語集と文字起こし ----------------------------------------------------
 
-def load_glossary(proj: Path) -> list[tuple[str, str]]:
-    """glossary.md の表から (誤変換, 正式表記) の組を長い順に返す。"""
-    g = proj / "knowledges" / "glossary.md"
+def _glossary_pairs(g: Path) -> dict[str, str]:
+    """glossary.md の表から {誤変換: 正式表記}。無ければ空。"""
+    pairs: dict[str, str] = {}
     if not g.exists():
-        return []
-    pairs = []
+        return pairs
     for line in g.read_text(encoding="utf-8").splitlines():
         if not line.startswith("|"):
             continue
@@ -493,7 +502,16 @@ def load_glossary(proj: Path) -> list[tuple[str, str]]:
         for alias in re.split(r"[,、，]", cells[2]):
             alias = alias.strip()
             if len(alias) >= 2 and alias != term:
-                pairs.append((alias, term))
+                pairs[alias] = term
+    return pairs
+
+
+def load_glossary(proj: Path) -> list[tuple[str, str]]:
+    """共通（knowledges/glossary.md）→ 案件の順に読み、同じ誤変換は案件側が勝つ。(誤変換, 正式表記) を長い順に返す。"""
+    merged: dict[str, str] = {}
+    for g in (COMMON / "glossary.md", proj / "knowledges" / "glossary.md"):
+        merged.update(_glossary_pairs(g))
+    pairs = list(merged.items())
     # ponytail: 長い順に単純置換。連鎖置換（置換結果が別の誤変換に一致）は用語集側で避ける
     pairs.sort(key=lambda p: -len(p[0]))
     return pairs
@@ -529,33 +547,45 @@ def cmd_transcript_normalize(args):
               f"（例: sed -n '1,200p' {shown}）")
     if not counts:
         print("  置換なし（用語集に一致する誤変換が無い。用語集: "
-              f"projects/{name}/knowledges/glossary.md）")
+              f"projects/{name}/knowledges/glossary.md と knowledges/glossary.md（共通））")
     for (alias, term), n in counts.items():
         print(f"  {alias} → {term}: {n}")
 
 
+def _knowledges_dir(args) -> Path:
+    """--common なら共通（knowledges/）、そうでなければ案件の knowledges/。どちらも無ければ止まる。"""
+    if args.common:
+        return common_dir()
+    if not args.project:
+        die("案件名を付けるか、案件をまたぐ自社の事実なら --common")
+    return project_dir(args.project) / "knowledges"
+
+
 def cmd_glossary_add(args):
-    proj = project_dir(args.project)
-    g = proj / "knowledges" / "glossary.md"
+    kd = _knowledges_dir(args)
+    g = kd / "glossary.md"
     if not g.exists():
-        write(g, render(TEMPLATES / "project" / "knowledges" / "glossary.md",
-                        project=args.project, date=today()))
+        tpl = ("common",) if args.common else ("project", "knowledges")
+        write(g, render(TEMPLATES.joinpath(*tpl) / "glossary.md", project=args.project or "", date=today()))
     cell = lambda s: (s or "").replace("|", "／").strip()  # noqa: E731
     row = f"| {cell(args.term)} | {cell(args.reading)} | {cell(args.alias)} | {cell(args.desc)} | {cell(args.relation)} |"
     write(g, g.read_text(encoding="utf-8").rstrip("\n") + "\n" + row + "\n")
-    update_index(proj / "knowledges")
+    if args.common:
+        set_frontmatter(g, updated=today())  # doctor の 90 日はここから数える
+    update_index(kd)
     print(f"追加: {row}")
 
 
 def cmd_know_new(args):
-    proj = project_dir(args.project)
-    kd = proj / "knowledges"
+    kd = _knowledges_dir(args)
     nums = [int(m.group(1)) for p in kd.glob("*.md") if (m := re.match(r"(\d{3})_", p.name))]
     dest = kd / f"{max(nums, default=0) + 1:03d}_{slugify(args.title)}.md"
-    write(dest, render(TEMPLATES / "knowledge.md", title=args.title, date=today()))
+    write(dest, render(TEMPLATES / "knowledge.md", title=args.title, date=today(), owner=args.owner or ""))
     update_index(kd)
-    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く（関係があれば relates_to、置き換えた決定があれば supersedes も）。"
-          f"書いたら scripts/ws index projects/{args.project}/knowledges で一覧の要約を更新する（自動では更新されない）")
+    hint = ("3 ヶ月変わらない自社の事実だけを書く（進捗・数値・案件ごとの決定は案件側）。owner（担当）が空だと doctor が警告する。"
+            if args.common else "")
+    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く（関係があれば relates_to、置き換えた決定があれば supersedes も）。{hint}"
+          f"書いたら scripts/ws index {rel(kd)} で一覧の要約を更新する（自動では更新されない）")
 
 
 # ---- 教訓（人からの指摘） ---------------------------------------------------
@@ -616,6 +646,19 @@ def cmd_doctor(args):
     if len(lesson_lines()) > LESSONS_MAX:
         problems.append(f"LESSONS.md が {len(lesson_lines())} 行（上限 {LESSONS_MAX}）。"
                         "統合するか AGENTS.md・doctor の検査へ昇格して減らす")
+    # 共通ナレッジは案件の外で腐る（Ubie「人手で維持する台帳は必ず腐る」）ので、担当と鮮度をここで数える
+    for k in sorted(COMMON.glob("*.md")) if COMMON.is_dir() else []:
+        if k.name == "index.md":
+            continue
+        meta = read_frontmatter(k)[0]
+        if not meta.get("summary"):
+            problems.append(f"{rel(k)}: frontmatter の summary が空")
+        if not meta.get("owner"):
+            problems.append(f"{rel(k)}: owner（担当）が空。共通ナレッジは 1 ファイル 1 担当（腐ったとき誰が直すか・消すかを決めておく）")
+        age = _days_since(meta.get("updated", ""))
+        if age is None or age > COMMON_STALE_DAYS:
+            problems.append(f"{rel(k)}: updated が{'無い' if age is None else f' {age} 日前'}（{COMMON_STALE_DAYS} 日超）。"
+                            f"担当（{meta.get('owner') or '未設定'}）が中身を確かめて updated を直すか、消す")
     for proj in sorted(p for p in PROJECTS.iterdir() if p.is_dir()):
         for req in ("index.md", "knowledges/index.md", "tasks/index.md"):
             if not (proj / req).exists():
@@ -672,6 +715,14 @@ def cmd_doctor(args):
 
 
 # ---- hooks（Claude Code / Codex CLI 共通） ---------------------------------
+
+def _days_since(date_str: str) -> int | None:
+    """YYYY-MM-DD から今日までの日数。空や壊れた日付は None。"""
+    try:
+        return (now().date() - dt.date.fromisoformat(date_str.strip())).days
+    except ValueError:
+        return None
+
 
 def _stdin_json() -> dict:
     try:
@@ -760,10 +811,11 @@ def cmd_hook_session_start(args):
                 f.unlink(missing_ok=True)
     lessons = lesson_lines()
     tail = "\n人からの指摘（LESSONS.md。守る）:\n" + ("\n".join(lessons) if lessons else "（無し）")
+    common = _common_block()  # 案件をまたぐ自社の事実。タスクが無い（質問に答えるだけ）ときも要る
     t = current_task(sid)
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
-              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。" + tail)
+              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。\n" + common + tail)
         return
     meta, body = read_frontmatter(t / "index.md")
     proj = project_of(t)
@@ -778,13 +830,23 @@ def cmd_hook_session_start(args):
     # （ターンごとに会話全体を再送する。bench では 1 ターン ≒ 32k トークンの cache read）。
     # compact 後も SessionStart(compact) で同じものが入る。長すぎるときは従来どおりパスだけ示す
     know = _index_block(PROJECTS / str(proj) / "knowledges" / "index.md")
-    full = (head + f"ナレッジの一覧（projects/{proj}/knowledges/index.md より。必要なものだけ開く）:\n{know}\n"
-            f"--- {rel(t)}/index.md の全文（Read で読み直さない。更新は Edit で）---\n{body.strip()}\n---")
+    full = (head + f"ナレッジの一覧（projects/{proj}/knowledges/index.md より。必要なものだけ開く）:\n{know}\n" + common
+            + f"--- {rel(t)}/index.md の全文（Read で読み直さない。更新は Edit で）---\n{body.strip()}\n---")
     if len(full) + len(tail) <= INJECT_MAX:
         _emit_context(full + tail)
         return
-    _emit_context(head + f"まず {rel(t)}/index.md を読む。ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。\n"
+    _emit_context(head + f"まず {rel(t)}/index.md を読む。ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。"
+                  + ("共通ナレッジ（自社の組織・用語）は knowledges/index.md から。" if common else "") + "\n"
                   f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
+
+
+def _common_block() -> str:
+    """共通ナレッジ（knowledges/index.md）の一覧行。案件のナレッジ一覧と同じ形。無ければ空（使っていない人の注入を増やさない）。"""
+    idx = COMMON / "index.md"
+    if not idx.exists():
+        return ""
+    return ("共通ナレッジの一覧（knowledges/index.md より。自社の組織・決裁・システム・手順・用語。"
+            f"案件側と同じ語・事実があれば案件側が勝つ）:\n{_index_block(idx)}\n")
 
 
 def _index_block(idx: Path) -> str:
@@ -900,6 +962,7 @@ def cmd_hook_pre_tool_use(args):
                 reason = (f"[agent-ws] 現在のタスク（{rel(cur)}）以外のタスクフォルダにはアクセスしない: "
                           f"{', '.join(others)}\n"
                           f"ナレッジの正本は projects/{cur_key[0]}/knowledges/（入口は knowledges/index.md）。"
+                          "自社の組織・用語など案件をまたぐ事実は knowledges/（共通）。"
                           "そこに無ければ knowledge-promote で昇格するか、人に聞く。"
                           f"タスクを切り替えるなら scripts/ws task use {others[0]}。")
             else:
@@ -913,7 +976,7 @@ def cmd_hook_pre_tool_use(args):
         if roots:
             _deny(f"[agent-ws] {', '.join(roots)} を横断して一覧・検索しない（他タスクの本文が結果に混ざり、トークンも無駄になる）。"
                   f"一覧は projects/index.md と projects/{cur_key[0]}/tasks/index.md。検索は現在のタスク（{rel(cur)}）か "
-                  f"projects/{cur_key[0]}/knowledges/ に範囲を絞る。")
+                  f"projects/{cur_key[0]}/knowledges/ か knowledges/（共通）に範囲を絞る。")
             return
     # ここまで来たら他タスクへのアクセスではない。正規化版があるならそちらへ読み替える
     # （誤変換の残る原文を読ませない。順序はここが最後＝上の deny 判定を全部通ったあとに評価する）
@@ -1018,23 +1081,26 @@ def main(argv=None):
     q.set_defaults(fn=cmd_transcript_normalize)
 
     g = sub.add_parser("glossary", help="用語集").add_subparsers(dest="sub", required=True)
-    q = g.add_parser("add", help="用語集に1行足す")
-    q.add_argument("project")
+    q = g.add_parser("add", help="用語集に1行足す（--common なら共通用語集 knowledges/glossary.md へ）")
+    q.add_argument("project", nargs="?", help="案件名。--common のときは省略")
     q.add_argument("term", help="正式表記")
     q.add_argument("--reading", help="よみ")
     q.add_argument("--alias", help="誤変換・別表記（カンマ区切り）")
     q.add_argument("--desc", help="説明")
     q.add_argument("--relation", help="関係（→担当: 誰, →依存: 何, →置き換え: 旧案。空でよい）")
+    q.add_argument("--common", action="store_true", help="案件ではなく共通用語集（自社の語。案件と重なれば案件側が勝つ）へ")
     q.set_defaults(fn=cmd_glossary_add)
 
     k = sub.add_parser("know", help="ナレッジ").add_subparsers(dest="sub", required=True)
-    q = k.add_parser("new", help="knowledges/NNN_<title>.md を雛形から作る")
-    q.add_argument("project")
+    q = k.add_parser("new", help="knowledges/NNN_<title>.md を雛形から作る（--common なら共通ナレッジへ）")
+    q.add_argument("project", nargs="?", help="案件名。--common のときは省略")
     q.add_argument("title")
+    q.add_argument("--common", action="store_true", help="案件ではなく共通ナレッジ（repo 直下 knowledges/。3 ヶ月変わらない自社の事実だけ）へ")
+    q.add_argument("--owner", help="担当（共通ナレッジでは必須。1 ファイル 1 担当。空だと doctor が警告する）")
     q.set_defaults(fn=cmd_know_new)
 
     q = sub.add_parser("index", help="index.md の自動生成部分（<!-- ws:index -->）を更新する")
-    q.add_argument("dir", nargs="?", help="省略時は projects/ 以下すべて")
+    q.add_argument("dir", nargs="?", help="省略時は projects/ 以下すべてと knowledges/（共通）")
     q.set_defaults(fn=cmd_index)
 
     le = sub.add_parser("lesson", help="人からの指摘（教訓）").add_subparsers(dest="sub", required=True)

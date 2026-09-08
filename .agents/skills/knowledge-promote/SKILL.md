@@ -8,9 +8,9 @@ description: タスクの中で得た知見を、案件のナレッジ（knowled
 
 ## 既定の進め方
 1. `projects/<project>/knowledges/index.md` を見て、同じ内容のナレッジが既にあれば新規に作らずそれを更新する。
-2. 無ければ `scripts/ws know new <project> "タイトル"` で雛形を作る。
+2. 無ければ `scripts/ws know new <project> "タイトル"` で雛形を作る。自社の組織図・決裁範囲・社内システム・標準手順のように案件をまたぐ事実なら `scripts/ws know new --common "タイトル" --owner "担当"` で repo 直下の `knowledges/` へ（3 ヶ月変わらないものだけ。同じ事実が案件側にもあれば案件側が勝つ）。
 3. 事実だけを書く。`summary` を 1 文で、`source` に出所（references/ のパス、会議名と日付）を書く。`type` は fact（事実・仕様）/ procedure（手順）/ decision（決定と理由）/ contact（関係者と役割）。関係するナレッジ・用語があれば `relates_to`、置き換えた古い決定や数字があれば `supersedes` に書く（どちらも任意。空でよい）。
-4. 用語なら本文ではなく `scripts/ws glossary add` で用語集に足す。
+4. 用語なら本文ではなく `scripts/ws glossary add` で用語集に足す（自社の語は `--common`、顧客の語は案件）。
 5. 数値・仕様は references の「引用した記述」と突き合わせてから書く。
 
 ## つまずきどころ

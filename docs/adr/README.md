@@ -8,7 +8,7 @@
 | [0001](0001-enforce-with-hooks.md) | 「他タスクを読まない」は hook で止める | 採用 | プロンプトの指示は助言。拒否の理由文で knowledges/ へ誘導する |
 | [0002](0002-one-task-one-session-and-cache-guard.md) | 1 タスク = 1 セッション。キャッシュ切れ後の 1 通目は止める | 採用 | TTL は 60 分（Claude サブスク）/ 30 分（Codex）/ 5 分（API キー） |
 | [0003](0003-session-scoped-current-task.md) | 「現在のタスク」はセッションごとに持つ | 採用 | `.ws/sessions/<session_id>.current`。同じ clone で並行できる |
-| [0004](0004-knowledges-single-source.md) | ナレッジの正本は knowledges/ だけ | 採用 | 他タスクの tasks/ は拒否。新規タスクで他タスクへの立ち入り 0 回 |
+| [0004](0004-knowledges-single-source.md) | ナレッジの正本は knowledges/ だけ | 採用（横断の置き場は 0015 で置き換え） | 他タスクの tasks/ は拒否。新規タスクで他タスクへの立ち入り 0 回 |
 | [0005](0005-lessons-on-first-correction.md) | 指摘は 1 回目で LESSONS.md に残す | 採用 | 2 回目を待つ規則は機能しない。20 行超で減らす |
 | [0006](0006-reference-summary-and-original-pair.md) | reference は要点と原文の対 | 採用 | compact 後に中身ごと残るのは小さいファイルだけ |
 | [0007](0007-transcript-in-fork.md) | 文字起こしは fork の中で処理する | 採用 | 本線に本文を入れない。Codex は規約と既定モデルで代替 |
@@ -19,6 +19,7 @@
 | [0012](0012-token-levers-are-session-length-not-tools.md) | 索引・グラフ・出力圧縮のツールは入れない | 採用 | 消費はセッション長の 2 乗。tool search が既定オンで MCP の削減余地は無い |
 | [0013](0013-no-backend-context-engineering-port.md) | InsForge 型の backend context engineering は取り込まない | 採用 | 狭い skills・CLI・1 回の状態注入・拒否文は同等物が既にある。bench で拒否は 45 本中 3 回 |
 | [0014](0014-no-ontology-layer.md) | 重いオントロジー（グラフ DB・MCP・precondition）は入れない。軽い関係層は実務で判断する | 保留 | 前提の注入・用語集・hook が同等物。関係の欄は任意で足し、手戻りの 3 型を LESSONS に数えて 3 案件後に決める |
+| [0015](0015-common-knowledges-for-cross-project-facts.md) | 案件をまたぐ自社の事実は repo 直下の knowledges/（共通）に置く | 採用 | 組織図・決裁範囲・社内システム・標準手順・共通用語。3 ヶ月変わらないものだけ、案件側が勝つ、1 ファイル 1 担当で 90 日で doctor が警告。注入の増分は 274 字 |
 
 ## 書き方
 

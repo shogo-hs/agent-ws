@@ -42,6 +42,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す。Claude Code では researcher の中（fork）で走り、本線には要点（`.summary.md`）だけが戻る |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」「IdP 連携の担当は鈴木さん」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` / `glossary add acme "IdP 連携" --relation "→担当: 鈴木"` で用語集に足す（「関係」は任意。3 ヶ月変わらないものだけ） |
+| 「うちは部長決裁が 500 万円まで」「勤怠システムは KinTai って呼んでる」 | `scripts/ws know new --common "決裁範囲" --owner "経営企画室"` / `glossary add --common "KinTai" --alias "勤怠システム"` で repo 直下の `knowledges/`（共通。案件をまたぐ自社の事実）に書く。3 ヶ月変わらないものだけ。案件側と同じ語・事実があれば案件側が勝つ |
 | 「結論を先に書いて」「その言い方はやめて」 | `scripts/ws lesson add "報告は結論を先に書く（読む人はチャットしか見ない）"` で `LESSONS.md` に 1 行残す。案件固有なら `--project acme` で案件の決まりごとへ |
 | 「このタスクは終わり」 | `scripts/ws task done`。状態を done にし、「現在のタスク」を外す |
 
@@ -90,7 +91,8 @@ agent-ws/
 │   ├── transcript-ingest/ 文字起こしを用語集で直してナレッジ化する
 │   └── knowledge-promote/ タスクで得た知見を knowledges/ に昇格する
 ├── scripts/ws             エージェントが呼ぶ CLI（python3 の標準ライブラリだけで動く）
-├── templates/             案件・タスク・ナレッジ・情報源・用語集の雛形
+├── templates/             案件・タスク・ナレッジ・情報源・用語集・共通ナレッジの雛形
+├── knowledges/            案件をまたぐ自社の事実（組織図・決裁範囲・社内システム・標準手順・共通用語）。案件の knowledges/ と同じ形。見本は架空
 ├── projects/
 │   ├── index.md           案件一覧
 │   └── <案件>/
@@ -114,7 +116,7 @@ agent-ws/
 ### エージェントが読む順番
 
 1. `AGENTS.md`（60 行以内の規約。起動時に自動で読まれる）
-2. hook が差し込む「現在のタスク」、案件の `index.md` の「この案件での決まりごと」、案件の `knowledges/index.md` の一覧、タスクの `index.md` の全文、`LESSONS.md` の全行
+2. hook が差し込む「現在のタスク」、案件の `index.md` の「この案件での決まりごと」、案件の `knowledges/index.md` の一覧、repo 直下 `knowledges/index.md` の一覧（共通。案件をまたぐ自社の事実）、タスクの `index.md` の全文、`LESSONS.md` の全行
 3. 必要なナレッジと用語集だけを開く（一覧は 2 で渡されているので `knowledges/index.md` を読み直さない）
 
 ### 起動時の注入でターンを減らす
@@ -136,7 +138,7 @@ Codex CLI は hook の注入が既定で約 2,500 トークンに切られるた
 
 `scripts/ws hook pre-tool-use` が、ツールの入力（読むパス・grep の対象・シェルのコマンド）に「現在のタスク以外の `projects/*/tasks/*/`」が含まれていたら拒否し、理由として `knowledges/` を案内します。
 `tasks/index.md`（一覧）と `scripts/ws` 自身の実行は通します。
-`projects/`・案件直下・`tasks/` 直下を対象にした `find` / `ls` / `grep -r` / `rg` / `tree` と、パス指定の無い Grep / Glob も現在のタスクがある間は拒否します（他タスクの本文が結果に混ざり、読む導線としては `projects/index.md` と `tasks/index.md` で足りるため）。現在のタスクが無いとき（agent-ws 自体を直すとき）は止めません。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
+`projects/`・案件直下・`tasks/` 直下を対象にした `find` / `ls` / `grep -r` / `rg` / `tree` と、パス指定の無い Grep / Glob も現在のタスクがある間は拒否します（他タスクの本文が結果に混ざり、読む導線としては `projects/index.md` と `tasks/index.md` で足りるため）。現在のタスクが無いとき（agent-ws 自体を直すとき）は止めません。repo 直下の `knowledges/`（共通）は現在のタスクの有無に関係なく読み書きできます。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
 Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` から同じスクリプトを呼びます。
 起動時の案内（SessionStart）は JSON の `additionalContext` で返します。Claude Code は素のテキストでも文脈に足しますが、Codex CLI は JSON でないと文脈に載りません（0.153.4 で確認）。
 
@@ -163,6 +165,13 @@ Claude で API キーを直に叩いていてキャッシュが 5 分で切れ�
 `knowledges/glossary.md` は Markdown の表（正式表記 / 読み / 誤変換・別表記 / 説明）です。
 人が GitHub や Obsidian でそのまま読め、`scripts/ws transcript normalize` も同じ表を読みます。
 置換は表に書いた文字列と一致した箇所だけで、読みが近い語を推測して置き換えることはしません。1〜2 文字の語や一般語は誤爆するので書かないでください。
+
+### 共通ナレッジ（案件をまたぐ自社の事実）
+
+自社の組織図・決裁範囲・社内システムの一覧・標準手順・共通用語のように、どの案件でも同じで 3 ヶ月は変わらない事実は、repo 直下の `knowledges/` に置きます（案件の `knowledges/` と同じ形。`scripts/ws know new --common "タイトル" --owner "担当"` と `glossary add --common`）。進捗・数値・案件ごとの決定は案件側に置きます。組織図は 1 行 1 人か 1 部署で、関係は `→所属`・`→上位`・`→決裁` だけを書きます（見本は `knowledges/001_組織図.md`。架空です）。
+SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差し込みます（現在のタスクが無いときも）。見本の組織図 1 枚と用語 3 語での増分は 274 字（現在のタスクあり 1,836 → 2,110 字、無し 136 → 410 字）で、共通側が無ければ 0 です。本文は必要なときだけ読みます。
+同じ語・同じ事実が案件側と共通側にあれば案件側が勝ちます（顧客の組織図は案件、自社の組織図は共通）。`scripts/ws transcript normalize` は共通 → 案件の順に用語集を読み、同じ誤変換は案件側で上書きします。
+共通側は案件の外で腐るので、1 ファイル 1 担当（frontmatter の `owner`）を持たせます。`owner` が空か `updated` が 90 日を超えると `scripts/ws doctor` が警告するので、担当が中身を確かめて `updated` を直すか消してください。hook は共通 `knowledges/` の読み書きを現在のタスクの有無に関係なく通します（`projects/` 横断とルートの一覧・検索の拒否は変わりません）。設計判断は `docs/adr/0015`。
 
 ### 人からの指摘
 
