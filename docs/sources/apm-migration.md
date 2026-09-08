@@ -1,7 +1,7 @@
 # APM 移管を見送った判断の根拠
 
 「agent-ws の規約・スキル・hooks を Microsoft APM（Agent Package Manager）に移管すべきか」を
-調べて見送った判断（kanban T-6PJJT、結論は html-hub の D-61CTQ）の根拠。
+調べて見送った判断（結論は `docs/adr/0011`）の根拠。
 各行のファイルに取得日時・引用・原文（`.orig.md`）がある。ページは書き換わるので、
 判断を見直すときは再取得して差分を見る。
 

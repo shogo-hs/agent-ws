@@ -14,4 +14,4 @@ APM パッケージにしない。テンプレートリポジトリのまま配�
 ## 影響
 statusLine と `templates/` は APM の primitive に無いので、移管しても管理外が残る事情は変わらない。3 つ目のハーネスに広げる・既存リポジトリへ後付けする・サブエージェントが増える・APM が 1.0 に到達する、のいずれかが起きたら再検討する。
 
-根拠: `docs/sources/apm-migration.md` #1〜#3・kanban T-6PJJT・設計書 D-61CTQ
+根拠: `docs/sources/apm-migration.md` #1〜#3
