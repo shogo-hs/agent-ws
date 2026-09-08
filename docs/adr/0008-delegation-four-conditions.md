@@ -14,4 +14,4 @@ Anthropic・OpenAI の公式文書は、分類・抽出・通読のような定�
 ## 影響
 条件を満たす仕事が無ければ委譲は起きない（bench の結果はそれを示している）。本線に残すもの（目的と進め方・見積の計算・報告文・昇格の判断）は明文化した。
 
-根拠: `docs/sources/delegation.md` #1〜#8・kanban T-4ZFES・設計書 D-GAD0W（2.2 節・採らなかった案の表・4 節）
+根拠: `docs/sources/delegation.md` #1〜#8

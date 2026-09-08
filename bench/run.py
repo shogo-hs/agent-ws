@@ -411,6 +411,14 @@ def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: 
     return res, proc.stderr[-2000:], elapsed, proc.returncode
 
 
+def tilde(p: Path) -> str:
+    """ホーム配下のパスは `~/…` で残す（結果ファイルは公開リポジトリに入るので利用者名を書かない）。"""
+    try:
+        return "~/" + str(p.relative_to(Path.home()))
+    except ValueError:
+        return str(p)
+
+
 def find_transcript(session_id: str) -> Path | None:
     for _ in range(10):
         hits = list((Path.home() / ".claude" / "projects").glob(f"*/{session_id}.jsonl"))
@@ -593,7 +601,7 @@ def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, 
                elapsed=round(elapsed, 1), returncode=rc, num_turns=res.get("num_turns"),
                cost_usd=res.get("total_cost_usd"), is_error=res.get("is_error"),
                permission_denials=len(res.get("permission_denials") or []),
-               transcript=str(tpath) if tpath else None, stderr=stderr[-500:] if rc else "",
+               transcript=tilde(tpath) if tpath else None, stderr=stderr[-500:] if rc else "",
                changed_files=changed, has_next=bool(re.search(r"次の一手|次回|次のセッション|TODO|残作業", changed_text)),
                final_text=final[:6000], changed_text=changed_text[:30000],
                baseline=sorted(baseline) if exp == "chain" else None)
@@ -670,6 +678,7 @@ def cmd_rescore(args):
         baseline = set(r.get("baseline") or [])
         if not baseline and rundir.exists():
             baseline = set(snapshot(rundir)) - set(changed)  # 実行前のツリー = 今のツリー − 書き換えたもの
+        tp = str(Path(tp).expanduser()) if tp else tp
         if tp and Path(tp).exists():
             r.update(analyze(Path(tp), rundir, other_task_pred(r["cond"], r["exp"], r.get("stage"), baseline)))
         if r.get("stage") == 1 and "changed_text" not in r:

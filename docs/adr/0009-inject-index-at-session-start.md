@@ -12,6 +12,6 @@ SessionStart hook（startup / resume / clear / compact）が、現在のタス�
 - 注入を「次の一手」だけに留める（従来）: index.md を読む Read のターンが残る
 - AGENTS.md をさらに圧縮する: 固定分の差は 2.9k トークン（1 ターンの 9%）で、60 行を削っても 1〜2k
 ## 影響
-起動時の文脈が 1〜2k トークン増え、以後すべてのターンに乗る。効果は bench で未測定（T-G6KJ5 で変更前後を比べる）。0006 の「Read の出力上限を下げない」は変えない。
+起動時の文脈が 1〜2k トークン増え、以後すべてのターンに乗る。効果は bench で未測定（変更の前後を比べる）。0006 の「Read の出力上限を下げない」は変えない。
 
-根拠: `docs/sources/token-saving.md` #2・#8・#12・#14・#15・kanban T-G6KJ5・設計書 D-1GVS1（4 節の集計表）
+根拠: `docs/sources/token-saving.md` #2・#8・#12・#14・#15・README「計測」第 6 弾の表

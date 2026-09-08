@@ -29,8 +29,9 @@
 ## 捨てた案
 ## 影響
 
-根拠: docs/sources/<name>.md の行（#N）・kanban T-XXXXX・設計書 D-XXXXX
+根拠: docs/sources/<name>.md の行（#N）・bench/results/ のファイル・GitHub の issue / PR
 ```
 
 番号は連番。既存の ADR は書き換えず、決めを変えるときは新しい番号で置き換える（元の状態欄を「NNNN で置き換え」にする）。
-`T-XXXXX` / `D-XXXXX` は作者の作業記録（kanban と html-hub）の ID で、このリポジトリの外にある。テンプレートから自分の作業スペースを作った人は、自分の記録の ID に読み替えて使う。
+根拠には**このリポジトリの中か GitHub で辿れるものだけ**を書く（`docs/sources/` の行番号・`bench/results/` のファイル・issue / PR 番号）。
+手元のチケット管理やドキュメント管理システムの ID は書かない。読む人が辿れないため。

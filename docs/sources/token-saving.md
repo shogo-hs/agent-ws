@@ -1,6 +1,6 @@
 # トークン節約 5 点の根拠
 
-AGENTS.md「compact するときに残すもの」、README「セッションの切り方」「1 時間以上空いたあとの 1 通目を止める」、transcript-ingest の fork 化、reference の要点と原文の分離、正規化版への読み替え hook（kanban T-0NG9F）、および第 6 弾（SessionStart で index.md の全文を注入してターンを減らす・横断検索の拒否・同じ source の重複取得の検出・statusLine。kanban T-G6KJ5）の根拠。
+AGENTS.md「compact するときに残すもの」、README「セッションの切り方」「1 時間以上空いたあとの 1 通目を止める」、transcript-ingest の fork 化、reference の要点と原文の分離、正規化版への読み替え hook、および第 6 弾（SessionStart で index.md の全文を注入してターンを減らす・横断検索の拒否・同じ source の重複取得の検出・statusLine）の根拠。
 各行のファイルに取得日時・引用・原文（`.orig.md`）がある。ページは書き換わるので、規則を見直すときは再取得して差分を見る。
 
 | # | 出典（題名と URL） | 取得日時 | via | ファイル | 支えている規則 |

@@ -13,4 +13,4 @@ transcript-ingest スキルの frontmatter に `context: fork` / `agent: researc
 ## 影響
 Codex は fork しない（未知の frontmatter は無視され、同じ SKILL.md が一覧に載ることは 0.153.4 で確認）。Codex では規約と `[agents]` の既定モデル（gpt-5.4-mini）で代替する。SKILL.md は fork 先が質問で返さないよう命令形で書く。
 
-根拠: `docs/sources/token-saving.md` #3・#6・kanban T-0NG9F・T-SKSDN・設計書 D-X26K2（2 節の表・4 節の fork の実機確認）
+根拠: `docs/sources/token-saving.md` #3・#6
