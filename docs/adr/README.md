@@ -15,6 +15,7 @@
 | [0008](0008-delegation-four-conditions.md) | 調査係へ渡す仕事は 4 条件で決める | 採用 | 1 回でまとめて渡す。効果は bench で未測定 |
 | [0009](0009-inject-index-at-session-start.md) | SessionStart で index.md 全文とナレッジ一覧を注入する | 採用 | 消費の 93〜95% はターンごとの再送。Read のターンを省く。効果は bench で未測定 |
 | [0010](0010-deny-cross-task-scans.md) | projects/ を横断する一覧・検索は hook で拒否する | 採用 | find projects や path 無しの Grep は他タスクの本文を返す |
+| [0011](0011-no-apm-distribution.md) | 配布に Microsoft APM を使わない | 採用 | 逐語の重複は researcher の 4 行だけ。移すと単一正本がハーネスごとのコピーに戻る |
 
 ## 書き方
 
