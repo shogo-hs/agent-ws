@@ -41,7 +41,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-5.4-mini）に渡し、結論と出所だけ受け取る |
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す。Claude Code では researcher の中（fork）で走り、本線には要点（`.summary.md`）だけが戻る |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
-| 「クバネティスは Kubernetes の誤変換」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` で用語集に足す |
+| 「クバネティスは Kubernetes の誤変換」「IdP 連携の担当は鈴木さん」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` / `glossary add acme "IdP 連携" --relation "→担当: 鈴木"` で用語集に足す（「関係」は任意。3 ヶ月変わらないものだけ） |
 | 「結論を先に書いて」「その言い方はやめて」 | `scripts/ws lesson add "報告は結論を先に書く（読む人はチャットしか見ない）"` で `LESSONS.md` に 1 行残す。案件固有なら `--project acme` で案件の決まりごとへ |
 | 「このタスクは終わり」 | `scripts/ws task done`。状態を done にし、「現在のタスク」を外す |
 

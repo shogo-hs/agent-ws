@@ -83,6 +83,11 @@ class WsFlowTest(unittest.TestCase):
         self.ws("glossary", "add", "acme", "Kubernetes", "--reading", "くばねてぃす",
                 "--alias", "クバネティス, 久保ネティス", "--desc", "コンテナ基盤")
         self.ws("glossary", "add", "acme", "PoC", "--alias", "ポック")
+        self.ws("glossary", "add", "acme", "山田太郎", "--desc", "顧客側の PM", "--relation", "→承認: 見積")
+        gtext = (self.root / "projects/acme/knowledges/glossary.md").read_text(encoding="utf-8")
+        self.assertIn("| 説明 | 関係 |", gtext)
+        self.assertIn("| PoC |  | ポック |  |  |", gtext)  # --relation 無しでも列数は揃う
+        self.assertIn("| 山田太郎 |  |  | 顧客側の PM | →承認: 見積 |", gtext)
         out = self.ws("transcript", "normalize", str(ref)).stdout
         norm = ref.with_name(ref.stem + ".normalized.md").read_text(encoding="utf-8")
         self.assertIn("KubernetesのKubernetes移行はPoCで進める", norm)
@@ -93,6 +98,9 @@ class WsFlowTest(unittest.TestCase):
         # ナレッジの昇格、点検、完了
         self.ws("know", "new", "acme", "移行方針")
         self.assertTrue((self.root / "projects/acme/knowledges/001_移行方針.md").exists())
+        ktext = (self.root / "projects/acme/knowledges/001_移行方針.md").read_text(encoding="utf-8")
+        self.assertIn("relates_to:", ktext)
+        self.assertIn("supersedes:", ktext)
         self.assertIn("001_移行方針.md", (self.root / "projects/acme/knowledges/index.md").read_text(encoding="utf-8"))
         r = self.ws("doctor", check=False)
         self.assertEqual(r.returncode, 1, r.stdout)  # 昇格したナレッジの summary が空なので 1 件

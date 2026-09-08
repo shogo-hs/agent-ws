@@ -541,7 +541,7 @@ def cmd_glossary_add(args):
         write(g, render(TEMPLATES / "project" / "knowledges" / "glossary.md",
                         project=args.project, date=today()))
     cell = lambda s: (s or "").replace("|", "／").strip()  # noqa: E731
-    row = f"| {cell(args.term)} | {cell(args.reading)} | {cell(args.alias)} | {cell(args.desc)} |"
+    row = f"| {cell(args.term)} | {cell(args.reading)} | {cell(args.alias)} | {cell(args.desc)} | {cell(args.relation)} |"
     write(g, g.read_text(encoding="utf-8").rstrip("\n") + "\n" + row + "\n")
     update_index(proj / "knowledges")
     print(f"追加: {row}")
@@ -554,7 +554,7 @@ def cmd_know_new(args):
     dest = kd / f"{max(nums, default=0) + 1:03d}_{slugify(args.title)}.md"
     write(dest, render(TEMPLATES / "knowledge.md", title=args.title, date=today()))
     update_index(kd)
-    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く。"
+    print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く（関係があれば relates_to、置き換えた決定があれば supersedes も）。"
           f"書いたら scripts/ws index projects/{args.project}/knowledges で一覧の要約を更新する（自動では更新されない）")
 
 
@@ -1024,6 +1024,7 @@ def main(argv=None):
     q.add_argument("--reading", help="よみ")
     q.add_argument("--alias", help="誤変換・別表記（カンマ区切り）")
     q.add_argument("--desc", help="説明")
+    q.add_argument("--relation", help="関係（→担当: 誰, →依存: 何, →置き換え: 旧案。空でよい）")
     q.set_defaults(fn=cmd_glossary_add)
 
     k = sub.add_parser("know", help="ナレッジ").add_subparsers(dest="sub", required=True)
