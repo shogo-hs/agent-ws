@@ -3,6 +3,7 @@
 一時ディレクトリを WS_ROOT にして、案件作成 → タスク作成 → hook の拒否/許可 →
 情報源の保存 → 用語集と正規化 → 完了 の一連を通す。
 """
+import datetime as dt
 import http.server
 import json
 import os
@@ -794,6 +795,119 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("「引用した記述」節が未記入のまま", r.stdout)
         self.assertNotIn("oldest.md", r.stdout)
+
+    # ---- 共通ナレッジ（repo 直下 knowledges/。ADR 0015） ----
+
+    def test_common_knowledge_cli_and_injection(self):
+        # --common は案件名なしで共通側に書き、index.md が無ければ雛形から作る
+        self.ws("know", "new", "--common", "組織図", "--owner", "経営企画室")
+        kfile = self.root / "knowledges/001_組織図.md"
+        self.assertIn('owner: "経営企画室"', kfile.read_text(encoding="utf-8"))
+        self.assertIn("001_組織図.md", (self.root / "knowledges/index.md").read_text(encoding="utf-8"))
+        self.ws("glossary", "add", "--common", "KinTai", "--alias", "勤怠システム, キンタイ", "--relation", "→担当: 総務部")
+        g = (self.root / "knowledges/glossary.md").read_text(encoding="utf-8")
+        self.assertIn("| KinTai |", g)
+        self.assertIn("updated: ", g)  # doctor の 90 日はここから数える
+        r = self.ws("know", "new", "x", check=False)  # 案件も --common も無い
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("--common", r.stderr)
+        # 注入: タスクが無くても共通の一覧が入り、タスクがあれば案件の一覧と同じ形で並ぶ（案件側が先）
+        out = json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("共通ナレッジの一覧（knowledges/index.md より", out)
+        self.assertIn("- [001_組織図.md](001_組織図.md)", out)
+        self.assertIn("案件側が勝つ", out)
+        task = self._task()
+        self.ws("know", "new", "acme", "移行方針")
+        out = json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertLess(out.index("001_移行方針.md"), out.index("共通ナレッジの一覧"))
+        self.assertIn("- [001_組織図.md](001_組織図.md)", out)
+        self.assertLess(out.index("共通ナレッジの一覧"), out.index("index.md の全文"))
+        # 長すぎて全文を注入しないときも、共通の入口だけは示す
+        idx = task / "index.md"
+        idx.write_text(idx.read_text(encoding="utf-8") + "x" * 7000, encoding="utf-8")
+        out = json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("共通ナレッジ（自社の組織・用語）は knowledges/index.md から", out)
+        self.assertNotIn("- [001_組織図.md]", out)
+        # 共通が無ければ注入は増えない（使っていない人の文脈を太らせない）
+        shutil.rmtree(self.root / "knowledges")
+        out = json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("共通ナレッジ", out)
+
+    def test_common_glossary_merges_with_project_and_project_wins(self):
+        self.ws("glossary", "add", "--common", "KinTai", "--alias", "勤怠システム, キンタイ")
+        self._task()
+        self.ws("glossary", "add", "acme", "Kubernetes", "--alias", "クバネティス, キンタイ")  # キンタイ が両方にある
+        src = self.root / "m.txt"
+        src.write_text("勤怠システムとキンタイとクバネティス", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "s", "--kind", "transcript")
+        task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        out = self.ws("transcript", "normalize", str(ref)).stdout
+        self.assertIn("勤怠システム → KinTai: 1", out)      # 共通だけにある語は共通で直す
+        self.assertIn("キンタイ → Kubernetes: 1", out)      # 両方にある語は案件側が勝つ
+        self.assertEqual(ref.with_name(ref.stem + ".normalized.md").read_text(encoding="utf-8").strip(),
+                         "KinTaiとKubernetesとKubernetes")
+        # 共通用語集が無くても案件だけで動く
+        (self.root / "knowledges/glossary.md").unlink()
+        out = self.ws("transcript", "normalize", str(ref)).stdout
+        self.assertNotIn("KinTai", out)
+        self.assertIn("キンタイ → Kubernetes: 1", out)
+
+    def test_hook_allows_common_knowledges_regardless_of_current_task(self):
+        self.ws("know", "new", "--common", "組織図", "--owner", "経営企画室")
+        common = self.root / "knowledges"
+        allow = [("Read", {"file_path": str(common / "001_組織図.md")}),
+                 ("Edit", {"file_path": str(common / "001_組織図.md"), "old_string": "a", "new_string": "b"}),
+                 ("Write", {"file_path": str(common / "002_社内システム.md"), "content": "x"}),
+                 ("Grep", {"pattern": "決裁", "path": str(common)}),
+                 ("Glob", {"pattern": "*.md", "path": str(common)}),
+                 ("Bash", {"command": "grep -rn 決裁 knowledges"}),
+                 ("Bash", {"command": "ls knowledges/"}),
+                 ("Bash", {"command": "cat knowledges/index.md knowledges/glossary.md"}),
+                 ("Bash", {"command": "scripts/ws know new --common 決裁範囲 --owner 経営企画室"})]
+        for has_task in (False, True):
+            if has_task:
+                self._task()
+            for tool, inp in allow:
+                self.assertIsNone(self.hook(tool, inp), (has_task, tool, inp))
+        # 0010 の拒否はそのまま: ルートと projects/ を横断する一覧・検索は止まる（共通を読む口実にならない）
+        for tool, inp in [("Grep", {"pattern": "決裁"}), ("Bash", {"command": "find . -name '*.md'"}),
+                          ("Bash", {"command": "grep -rn 決裁 projects"})]:
+            self.assertEqual(self.hook(tool, inp), "deny", (tool, inp))
+        reason = json.loads(self.ws("hook", "pre-tool-use", stdin=json.dumps(
+            {"tool_name": "Grep", "tool_input": {"pattern": "決裁"}})).stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("knowledges/（共通）", reason)
+
+    def test_doctor_flags_common_knowledge_without_owner_or_stale(self):
+        self.ws("project", "new", "acme")
+        self.ws("know", "new", "--common", "組織図", "--owner", "経営企画室")
+        k = self.root / "knowledges/001_組織図.md"
+        k.write_text(k.read_text(encoding="utf-8").replace('summary: ""', 'summary: "部署と決裁者"'), encoding="utf-8")
+        self.ws("glossary", "add", "--common", "KinTai", "--alias", "勤怠システム")
+        g = self.root / "knowledges/glossary.md"
+        g.write_text(g.read_text(encoding="utf-8").replace('owner: ""', 'owner: "総務部"'), encoding="utf-8")
+        self.assertEqual(self.ws("doctor", check=False).returncode, 0)  # 担当あり・今日更新 → 問題なし
+        # owner 空
+        k.write_text(k.read_text(encoding="utf-8").replace('owner: "経営企画室"', 'owner: ""'), encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("knowledges/001_組織図.md: owner（担当）が空", r.stdout)
+        # updated が 90 日超・無い
+        k.write_text(k.read_text(encoding="utf-8").replace('owner: ""', 'owner: "経営企画室"'), encoding="utf-8")
+        old = (dt.date.today() - dt.timedelta(days=91)).isoformat()
+        k.write_text(re.sub(r"^updated: .*$", f"updated: {old}", k.read_text(encoding="utf-8"), flags=re.M), encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertIn("knowledges/001_組織図.md: updated が 91 日前（90 日超）。担当（経営企画室）が", r.stdout)
+        k.write_text(re.sub(r"^updated: .*\n", "", k.read_text(encoding="utf-8"), flags=re.M), encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertIn("knowledges/001_組織図.md: updated が無い（90 日超）", r.stdout)
+        # 案件側のナレッジには owner も 90 日も求めない（案件は日々動くので別の検査: 参照後の更新）
+        self.ws("know", "new", "acme", "移行方針")
+        pk = next((self.root / "projects/acme/knowledges").glob("001_*.md"))
+        pk.write_text(re.sub(r"^updated: .*$", f"updated: {old}", pk.read_text(encoding="utf-8").replace(
+            'summary: ""', 'summary: "s"'), flags=re.M), encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertNotIn("projects/acme/knowledges/001_", r.stdout)
 
 
 if __name__ == "__main__":

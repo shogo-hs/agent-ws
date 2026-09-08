@@ -8,7 +8,7 @@
 
 1. セッション開始時に hook が注入する「現在のタスク」の `index.md` の全文（目的・進め方・現在地・次の一手・情報源の一覧）とナレッジの一覧。読み直さない。長すぎて注入されないときだけ Read する
 2. その案件の `knowledges/index.md`。必要なナレッジだけを開き、使ったら `index.md` の「参照したナレッジ」に `- knowledges/<file>（updated YYYY-MM-DD）: 使った要点` の形で残す（`doctor` が参照後の更新を警告する）
-3. 固有名詞・略語が出てきたら `knowledges/glossary.md`（用語集）
+3. 自社の組織図・決裁範囲・社内システム・標準手順・共通用語（案件をまたぐ事実）は repo 直下の `knowledges/`（共通）。一覧は hook が差し込む。固有名詞・略語が出てきたら `knowledges/glossary.md`（用語集。案件と共通の両方を `transcript normalize` が引く）。案件側と同じ語・事実があれば案件側が勝つ
 
 フォルダに入ったら最初に `index.md` を読む。中身の一覧はそこにある。全ファイルを `ls` や `grep` で舐めない（`projects/`・案件直下・`tasks/` 直下への find/ls/grep/rg と、パス指定の無い Grep/Glob は hook が拒否する）。
 
@@ -45,7 +45,7 @@
 - 着手時に `index.md` の「目的」と「進め方」（3〜6 個の段階）を書き、段階が終わるたびに `[x]` にする。
 - 文字起こしは transcript-ingest（Claude Code では researcher の中で走る）に渡し、返った要点（`<stem>.summary.md`）から `index.md` の「現在地」「次の一手」「未確定の用語」を更新する。案件に残る決定は knowledge-promote へ。文字起こしの本文は本線で読まない。
 - セッションを終える前にタスクの `index.md` の「現在地」と「次の一手」を更新する。受けた指摘が残っていなければ `lesson add` で残す。
-- 案件に残る知見（決定事項・仕様・関係者・手順）は `scripts/ws know new` で `knowledges/` に昇格する。数値・仕様は references の「引用した記述」と突き合わせてから書く。
+- 案件に残る知見（決定事項・仕様・関係者・手順）は `scripts/ws know new` で `knowledges/` に昇格する。案件をまたぐ自社の事実は `know new --common --owner <担当>`（用語は `glossary add --common`）で repo 直下の `knowledges/` へ（3 ヶ月変わらないものだけ。進捗・数値・案件ごとの決定は案件側）。数値・仕様は references の「引用した記述」と突き合わせてから書く。
 
 ## スクリプトに任せる
 

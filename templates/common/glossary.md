@@ -1,0 +1,17 @@
+---
+title: "共通用語集"
+summary: "自社の固有名詞・略語・表記ゆれ。scripts/ws transcript normalize が案件の用語集と合わせて使う（同じ誤変換は案件側が勝つ）"
+owner: ""
+created: {{date}}
+updated: {{date}}
+---
+# 共通用語集
+
+- 案件の用語集（`projects/<案件>/knowledges/glossary.md`）と同じ表。`scripts/ws transcript normalize` は共通 → 案件の順に読み、同じ「誤変換・別表記」があれば案件側で上書きする。
+- 載せるのは自社の語だけ（社内システム・会議体・部署・役職・略語）。顧客の語は案件の用語集へ。
+  1文字の語や一般語（「移行」「対応」など）は誤爆するので書かない。
+- 「関係」は `→種類: 相手` をカンマ区切りで（例 `→担当: 総務部, →上位: 経営企画室`）。3 ヶ月変わらない関係だけ。
+- 行の追加は `scripts/ws glossary add --common "正式表記" --reading "よみ" --alias "誤1, 誤2" --desc "説明" --relation "→担当: 誰"`（frontmatter の updated が今日になる）。
+
+| 正式表記 | 読み | 誤変換・別表記 | 説明 | 関係 |
+|---|---|---|---|---|
