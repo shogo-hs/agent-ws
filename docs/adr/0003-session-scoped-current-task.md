@@ -13,4 +13,4 @@ hook の stdin と shell の環境変数が同じ session_id を持つことを�
 ## 影響
 同じ clone で複数セッションを並行できる。`task use` 直後から次の hook までの数秒は `.ws/current` を見る。端末から叩く `task current` はセッションに紐付かない。
 
-根拠: GitHub issue #1・PR #2・#3・kanban T-A841P・設計書 D-SETHW（採らなかった案の表）
+根拠: GitHub issue #1・PR #2・#3

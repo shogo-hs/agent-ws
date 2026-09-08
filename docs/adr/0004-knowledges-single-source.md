@@ -13,4 +13,4 @@ bench の新規タスク（Sonnet・各 5 回）で、agent-ws はナレッジ 3
 ## 影響
 昇格を怠ると次のタスクから見えない（`index.md` の「現在地」「次の一手」の更新と `know new` が終了前の手順）。ナレッジは案件ごとで、案件をまたぐ知見の置き場は無い。
 
-根拠: kanban T-SKSDN・T-A8J3B・T-4ZFES・設計書 D-SETHW・D-TKP02（5 節）・D-GAD0W（採らなかった案の表）・README「計測」新規タスクの表
+根拠: README「計測」新規タスクの表・`bench/results/summary.md` newtask 行

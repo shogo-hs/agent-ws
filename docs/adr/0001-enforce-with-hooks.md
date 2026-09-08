@@ -14,4 +14,4 @@ hooks は決定論的に実行される。拒否の理由文はモデルに届�
 ## 影響
 **起動はリポジトリのルートで行う**必要がある（サブディレクトリ起動ではルートの hooks が読まれない。0003 も参照）。hook が拒否するたびに 1 ターン増える。`mkdir` の直打ちなど、まだ規約でしか止めていないものは事故が起きたら hook に足す。
 
-根拠: kanban T-SKSDN・設計書 D-SETHW（採らなかった案の表・ベストプラクティスとの照合）・README「計測」新規タスクの表・`bench/results/summary.md` newtask 行
+根拠: README「計測」新規タスクの表・`bench/results/summary.md` newtask 行

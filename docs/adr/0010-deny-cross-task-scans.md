@@ -13,4 +13,4 @@
 ## 影響
 案件をまたぐ検索は `knowledges/` を案件ごとに指定する。`cd <現在のタスク> && find .` は通る（コマンドに現在のタスクのパスがあれば「.」を対象に数えない）。
 
-根拠: `docs/sources/token-saving.md` #7・#8・kanban T-G6KJ5・設計書 D-1GVS1
+根拠: `docs/sources/token-saving.md` #7・#8・README「計測」第 6 弾の表
