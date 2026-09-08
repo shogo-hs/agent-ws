@@ -40,6 +40,19 @@
 | 9 | mcp-compressor（Atlassian Labs） — https://github.com/atlassian-labs/mcp-compressor | 2026-09-08T22:21:40+09:00 | [snapshots/20260908_2221_GitHub_-_atlassian-labs_mcp-compressor_A.md](../snapshots/20260908_2221_GitHub_-_atlassian-labs_mcp-compressor_A.md) | MCP のツール定義を70〜97%圧縮するプロキシ。tool search が既定オンの環境では役目が重複する |
 | 10 | headroom — https://github.com/headroomlabs-ai/headroom | 2026-09-08T22:23:22+09:00 | [snapshots/20260908_2223_GitHub_-_headroomlabs-ai_headroom_Compre.md](../snapshots/20260908_2223_GitHub_-_headroomlabs-ai_headroom_Compre.md) | 会話履歴側を圧縮すると謳う数少ないツール。凍結済みプレフィックスはバイト同一に保つ設計 |
 
+## InsForge 型の backend context engineering（`docs/adr/0013` の根拠）
+
+「Supabase を InsForge に替えたら Claude Code が 2.8 倍安くなった」という記事から、その仕組み 4 点（狭い skills・`--json` の CLI・1 回の metadata・構造化エラー）が agent-ws に移せるかを調べた。
+
+| # | 出典（題名と URL） | 取得日時 | ファイル | 何の根拠か |
+|---|---|---|---|---|
+| 14 | How to cut Claude Code costs by 3x（X 記事） — https://x.com/_avichawla/status/2046500537584218438 | 2026-09-08T23:39:34+09:00 | [snapshots/20260908_2339_Avi_Chawla_on_X_https_t.co_xw9VH2zPP5_X.md](../snapshots/20260908_2339_Avi_Chawla_on_X_https_t.co_xw9VH2zPP5_X.md) | Supabase 10.4M・$9.21・12 通（うちエラー報告 10）対 InsForge 3.7M・$2.81・1 通。各 1 セッション。P.S. で「2.8x はデバッグループの影響が大きい」と著者が注記 |
+| 15 | How We Cut Our Claude Code Token Usage 2.8x!（同記事の Substack 版） — https://blog.dailydoseofds.com/p/how-we-cut-our-claude-code-token | 2026-09-08T23:38:56+09:00 | [snapshots/20260908_2338_How_We_Cut_Our_Claude_Code_Token_Usage_2.md](../snapshots/20260908_2338_How_We_Cut_Our_Claude_Code_Token_Usage_2.md) | #14 と同内容。X が読めないときの控え |
+| 16 | InsForge — https://github.com/InsForge/InsForge | 2026-09-08T23:39:03+09:00 | [snapshots/20260908_2339_GitHub_-_InsForge_InsForge_The_all-in-on.md](../snapshots/20260908_2339_GitHub_-_InsForge_InsForge_The_all-in-on.md) | 製品は BaaS（DB・auth・storage・functions・AI gateway）。エージェントの入口は MCP と CLI + Skills の 2 つ。agent-ws の仕事（文書）に当てはまる部分が無い |
+| 17 | MCPMark v2: InsForge on Sonnet 4.6 — https://insforge.dev/blog/mcpmark-benchmark-results-v2 | 2026-09-08T23:39:21+09:00 | [snapshots/20260908_2339_MCPMark_v2_InsForge_on_Sonnet_4.6.md](../snapshots/20260908_2339_MCPMark_v2_InsForge_on_Sonnet_4.6.md) | Postgres 21 タスク × 4 走で 7.3M 対 17.9M（2.4 倍）、Pass⁴ 42.86% 対 33.33%。**InsForge 自身の計測**で比較対象は Supabase MCP |
+| 18 | MCP is up to 32× more expensive than CLI — https://www.scalekit.com/blog/mcp-vs-cli-use | 2026-09-08T23:39:27+09:00 | [snapshots/20260908_2339_MCP_is_up_to_32×_more_expensive_than_CLI.md](../snapshots/20260908_2339_MCP_is_up_to_32×_more_expensive_than_CLI.md) | GitHub タスク 75 走（Sonnet 4）で MCP は CLI の 4〜32 倍。原因は 43 ツール定義の毎ターン注入。800 トークンの skill を足した CLI が最良。記事が引く「10〜35 倍」の出所 |
+| 19 | scalekit-inc/mcp-vs-cli-benchmark — https://github.com/scalekit-inc/mcp-vs-cli-benchmark | 2026-09-08T23:39:30+09:00 | [snapshots/20260908_2339_GitHub_-_scalekit-inc_mcp-vs-cli-benchma.md](../snapshots/20260908_2339_GitHub_-_scalekit-inc_mcp-vs-cli-benchma.md) | #18 のコードとデータ |
+
 ## 既にある台帳
 
 トークン節約の規則そのものの根拠は [token-saving.md](token-saving.md)。
