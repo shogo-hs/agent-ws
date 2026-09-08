@@ -18,6 +18,7 @@
 | [0011](0011-no-apm-distribution.md) | 配布に Microsoft APM を使わない | 採用 | 逐語の重複は researcher の 4 行だけ。移すと単一正本がハーネスごとのコピーに戻る |
 | [0012](0012-token-levers-are-session-length-not-tools.md) | 索引・グラフ・出力圧縮のツールは入れない | 採用 | 消費はセッション長の 2 乗。tool search が既定オンで MCP の削減余地は無い |
 | [0013](0013-no-backend-context-engineering-port.md) | InsForge 型の backend context engineering は取り込まない | 採用 | 狭い skills・CLI・1 回の状態注入・拒否文は同等物が既にある。bench で拒否は 45 本中 3 回 |
+| [0014](0014-no-ontology-layer.md) | 重いオントロジー（グラフ DB・MCP・precondition）は入れない。軽い関係層は実務で判断する | 保留 | 前提の注入・用語集・hook が同等物。関係の欄は任意で足し、手戻りの 3 型を LESSONS に数えて 3 案件後に決める |
 
 ## 書き方
 
