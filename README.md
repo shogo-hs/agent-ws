@@ -121,9 +121,9 @@ agent-ws/
 
 ### 起動時の注入でターンを減らす
 
-エージェントはターンごと（ツールを 1 回呼ぶごと）に会話全体を入力として送り直します。キャッシュが効いても課金はされ、この払い直しの下駄は 1 ターン 39k トークン前後でした（Claude Code 2.1.263・Sonnet・2026-09-08 の実測。bench を取った当時は 32k で、ハーネス側が太った分だけ増えています）。
+エージェントはターンごと（ツールを 1 回呼ぶごと）に会話全体を入力として送り直します。キャッシュが効いても課金はされ、会話が空でも毎ターン固定で送られる分（システムプロンプト・ツール定義・CLAUDE.md や hook の差し込み。以下「固定分」）は 1 ターン 39k トークン前後でした（Claude Code 2.1.263・Sonnet・2026-09-08 の実測。bench を取った当時は 32k で、ハーネス側が太った分だけ増えています）。
 一方で tool の結果そのものは 1 セッション合計で 2〜6 万字と小さく、処理した入力の 93〜95% はこの払い直しでした（bench の transcript の集計）。
-払い直しは長さに対して線形ではありません。実セッション 20 本・847 ターンを当てはめると **総トークン ≒ 下駄 × ターン数 + 1,848 × ターン数²**（R² 0.976）で、1 ターンごとに会話が約 3,700 トークン太り、それを以降の全ターンで払い直します。42 ターンを 1 本で走らせると約 4.9M、同じ 42 ターンを 6 ターン × 7 セッションに割ると約 2.1M で、**57% の差**になります。「1 タスク = 1 セッション」はここに効いています。
+払い直しは長さに対して線形ではありません。実セッション 20 本・847 ターンを当てはめると **総トークン ≒ 固定分 × ターン数 + 1,848 × ターン数²**（R² 0.976）で、1 ターンごとに会話が約 3,700 トークン太り、それを以降の全ターンで払い直します。42 ターンを 1 本で走らせると約 4.9M、同じ 42 ターンを 6 ターン × 7 セッションに割ると約 2.1M で、**57% の差**になります。「1 タスク = 1 セッション」はここに効いています。
 そこで SessionStart hook は、現在のタスクの `index.md` の全文と案件の `knowledges/index.md` の一覧を最初から文脈に入れます。再開のたびに `scripts/ws task current` → `Read index.md` → `Read knowledges/index.md` と 2〜3 ターン使っていた分が要らなくなります。
 注入は合計 6,000 字まで（Claude Code の hook 出力は 10,000 字で切られてファイル参照に化けるため）で、超える `index.md` は従来どおりパスと「次の一手」だけを示します。compact のあとも SessionStart(compact) で同じものが入るので、要約で消えた現在地は index.md から戻ります。
 Codex CLI は hook の注入が既定で約 2,500 トークンに切られるため、`.codex/hooks.json` の session-start に `additionalContextLimit: 8000` を付けています。
@@ -184,6 +184,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 ## 制約と注意
 
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
+- **Claude Code の Advisor（相談役モデル）は外しています**（`.claude/settings.json` の `env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`）。Advisor は相談のたびに固定分ごと会話全文を Opus に非キャッシュで読ませます。agent-ws の仕事では正誤に効かず（5/5 対 5/5）、相談が起きた本だけ費用が 3.4〜3.7 倍になりました（[ADR 0017](docs/adr/0017-disable-claude-code-advisor.md)）。戻すならその行を消してください（`/advisor` も使えるようになります）。
 - `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しいセッションと `/clear` のあとは、最後に設定したタスク（`.ws/current`）から始まります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
 - Windows では `.claude/skills` の symlink を作るのに開発者モードか管理者権限が要ります。`python3` が `py -3` の環境では `.claude/settings.json` と `.codex/hooks.json` のコマンドを書き換えてください。
 - Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。今回 user-prompt-submit に `--ttl 30` を足したので、更新後は `/hooks` で trust し直してください。
@@ -263,7 +264,7 @@ agent-ws は 1 セッション目が `scripts/ws` で残した index.md と refe
 
 - タスク名を言って頼む依頼では差が出ません（前回の計測。index.md が同じなら読む範囲も同じ）
 - 「Sonnet でも安定する」は、この材料では「古い数字を掴む」形の誤答が 1 回も出なかったので示せていません。仕組みなしの失敗はすべて「聞き返して止まる」でした
-- 固定分（1 ターンの下駄）は agent-ws が Sonnet で 32.0k、仕組みなしが 29.2k（AGENTS.md・skills・注入の 2.9k）。Haiku 4.5 は 24.5k と 21.8k
+- 毎ターン固定で送られる分は agent-ws が Sonnet で 32.0k、仕組みなしが 29.2k（AGENTS.md・skills・注入の 2.9k）。Haiku 4.5 は 24.5k と 21.8k
 - Codex CLI・Opus・compact 後の再注入・用語集の正規化は測っていません
 
 `bench/` は agent-ws を使うだけなら不要です。`projects/_example/` と同じく消して構いません。

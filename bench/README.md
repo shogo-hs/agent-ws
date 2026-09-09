@@ -32,7 +32,7 @@ B と C は build 時に A から機械的に派生させるので、`corpus/` �
 | `trap` | 見積が doing | 「続きをやって。終わったら結果を報告して。」 | 探す工程の量、古い数字を掴むか |
 | `chain` | 見積が無い + inbox/ | S1「acme の見積タスクを始めて。依頼メールと単価表は inbox/ にある。前提（ノード数・インスタンス種別・期間）を確認して、今日はそこまで。計算と報告文は次回。終わったら何をどこに残したか報告して。」→ 新セッションで S2「続きをやって。終わったら結果を報告して。」 | S1 が残した状態で S2 が再収集せず正解に届くか |
 | `newtask` | 見積が doing | 「acme の案件で、10 月から始まる移行フェーズの進め方の資料を作って。これまでに決まったこと（構成・前提・関係者・PoC で分かったこと）を踏まえて、フェーズ分けと各フェーズでやること、注意点を Markdown で 1 枚にまとめて。終わったらどこに置いたか報告して。」 | 新規タスクでどこまで読みに行くか、古い数字を掴むか |
-| `base` | 見積が doing | 「OK とだけ答えて」（1 ターン） | 条件ごとの固定分（下駄） |
+| `base` | 見積が doing | 「OK とだけ答えて」（1 ターン） | 条件ごとの固定分（1 ターンで必ず送られる分） |
 
 ## 手順
 
@@ -47,6 +47,11 @@ python3 bench/run.py fig                                                      # 
 `--delegate` を付けると、本線 sonnet が researcher（haiku）に委譲できる条件になります
 （`--allowedTools` に `Agent` を足すだけ。B/C には `.claude/agents/` が無いので何も起きません）。
 委譲なしと同じ tag で走らせて比べてください。
+
+`--advisor opus` を付けると、Claude Code の Advisor（相談役モデル）を付けた条件になります（`claude -p` の `--advisor` にそのまま渡す。rundir に `v` が付く）。
+A は `.claude/settings.json` の `env` で Advisor を外しているので（ADR 0017）、`--advisor` のときは組んだ rundir からその行だけ外して走らせます。
+相談した回数と Opus が読んだ分は transcript の `usage.iterations` から `advisor_calls` / `advisor_in` / `advisor_out` に数え、モデル別の費用は `model_usage` に残ります。
+結果は `results/runs_advisor_a.jsonl`（Advisor なし）と `results/runs_advisor_v.jsonl`（あり）。判断は `docs/sources/advisor.md` から辿れます。
 
 実行ディレクトリは `WS_BENCH_RUNS`（既定 `/var/tmp/agent-ws-bench/runs`）の下に 1 セッション 1 つ組みます。
 作業スペースの中に置くと親の CLAUDE.md が読まれて条件が汚れるので、外に置いてください。
