@@ -184,6 +184,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 ## 制約と注意
 
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
+- **Claude Code の Advisor（相談役モデル）は外しています**（`.claude/settings.json` の `env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`）。Advisor は相談のたびに固定分ごと会話全文を Opus に非キャッシュで読ませます。agent-ws の仕事では正誤に効かず（5/5 対 5/5）、相談が起きた本だけ費用が 3.4〜3.7 倍になりました（[ADR 0017](docs/adr/0017-disable-claude-code-advisor.md)）。戻すならその行を消してください（`/advisor` も使えるようになります）。
 - `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しいセッションと `/clear` のあとは、最後に設定したタスク（`.ws/current`）から始まります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
 - Windows では `.claude/skills` の symlink を作るのに開発者モードか管理者権限が要ります。`python3` が `py -3` の環境では `.claude/settings.json` と `.codex/hooks.json` のコマンドを書き換えてください。
 - Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。今回 user-prompt-submit に `--ttl 30` を足したので、更新後は `/hooks` で trust し直してください。

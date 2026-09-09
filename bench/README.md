@@ -48,6 +48,11 @@ python3 bench/run.py fig                                                      # 
 （`--allowedTools` に `Agent` を足すだけ。B/C には `.claude/agents/` が無いので何も起きません）。
 委譲なしと同じ tag で走らせて比べてください。
 
+`--advisor opus` を付けると、Claude Code の Advisor（相談役モデル）を付けた条件になります（`claude -p` の `--advisor` にそのまま渡す。rundir に `v` が付く）。
+A は `.claude/settings.json` の `env` で Advisor を外しているので（ADR 0017）、`--advisor` のときは組んだ rundir からその行だけ外して走らせます。
+相談した回数と Opus が読んだ分は transcript の `usage.iterations` から `advisor_calls` / `advisor_in` / `advisor_out` に数え、モデル別の費用は `model_usage` に残ります。
+結果は `results/runs_advisor_a.jsonl`（Advisor なし）と `results/runs_advisor_v.jsonl`（あり）。判断は `docs/sources/advisor.md` から辿れます。
+
 実行ディレクトリは `WS_BENCH_RUNS`（既定 `/var/tmp/agent-ws-bench/runs`）の下に 1 セッション 1 つ組みます。
 作業スペースの中に置くと親の CLAUDE.md が読まれて条件が汚れるので、外に置いてください。
 起動は次のとおりで、グローバルの hooks・プラグイン・MCP を外し、プロジェクトの `.claude/settings.json`（A の hooks）と CLAUDE.md だけを載せます。
