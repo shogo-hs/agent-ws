@@ -836,7 +836,7 @@ def dotplot(rows: list[tuple[str, list[tuple[str, str, list[float]]]]], lo: floa
 
 COND_NAME = {"A": ("agent-ws", "var(--accent)"), "B": ("同じ構造・仕組みなし", "var(--warn)"), "C": ("導入前（資料の山＋メモ）", "var(--muted)")}
 ROW_LABEL = {("trap", None): "続きをやって（罠）", ("chain", 2): "引き継ぎの 2 セッション目", ("chain", 1): "引き継ぎの 1 セッション目",
-             ("newtask", None): "新規タスク（進め方の資料）", ("base", None): "下駄（1 ターン）"}
+             ("newtask", None): "新規タスク（進め方の資料）", ("base", None): "固定分（1 ターン）"}
 
 
 def cmd_fig(args):
