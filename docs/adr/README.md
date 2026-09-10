@@ -22,6 +22,7 @@
 | [0016](0016-no-llm-retrospective-count-instead.md) | セッション終了時の自動レトロスペクティブは LLM に振り返らせない。数えられる指標を残し、規約の変更は人が決める | 提案 | SessionEnd は LLM 型 hook 不可・最大 60 秒。先行実装 10 本に効果の測定なし。正解の無い自己判定は精度を下げ、自動追記は 1,421 行に育つ。`ws retro` で拒否・ターン・文脈を数え、doctor が人に見せる |
 | [0015](0015-common-knowledges-for-cross-project-facts.md) | 案件をまたぐ自社の事実は repo 直下の knowledges/（共通）に置く | 採用 | 組織図・決裁範囲・社内システム・標準手順・共通用語。3 ヶ月変わらないものだけ、案件側が勝つ、1 ファイル 1 担当で 90 日で doctor が警告。注入の増分は 274 字 |
 | [0017](0017-disable-claude-code-advisor.md) | Claude Code の Advisor（相談役モデル）はリポジトリの settings で外す | 採用 | 正誤に効かず（5/5 対 5/5）相談が起きた本だけ 3.4〜3.7 倍。相談 1 回で Opus が 44k を非キャッシュで読む。`env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`。戻すなら行を消す |
+| [0018](0018-done-by-human-or-doctor.md) | done は人が言ったときか doctor の棚卸しで付ける。current は「最後に触ったタスク」 | 採用 | エージェントは完了を判断できない。`task done [path]`、doing 14 日放置を doctor が列挙、done は current 扱いしない。セッション内直列・セッション間並列のどちらでも成り立つ |
 
 ## 書き方
 
