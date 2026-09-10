@@ -68,6 +68,7 @@ scripts/ws --help
 scripts/ws project new acme
 scripts/ws task new acme kickoff --title "キックオフ準備"
 scripts/ws task current
+scripts/ws task done projects/acme/tasks/<dir>   # 終わったタスクを閉じる（doctor が 14 日放置の doing を知らせる）
 scripts/ws doctor            # index.md や frontmatter の欠落を報告する
 ```
 
@@ -108,7 +109,7 @@ agent-ws/
 │   ├── sources/           規則の根拠台帳（委譲規則・トークン節約の 5 点。URL・取得日時・支えている規則）
 │   └── snapshots/         出典ページの原文（要点 .md と原文 .orig.md の対）
 ├── tests/test_ws.py       scripts/ws の自己チェック
-└── .ws/                   （git 管理外）最後に設定したタスク（current）と、セッションごとの現在のタスクの写し・最終応答時刻
+└── .ws/                   （git 管理外）最後に触ったタスク（current。完了の印ではない）と、セッションごとの現在のタスクの写し・最終応答時刻
 ```
 
 ## 仕組み

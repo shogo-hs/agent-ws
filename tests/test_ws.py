@@ -909,6 +909,49 @@ class WsFlowTest(unittest.TestCase):
         r = self.ws("doctor", check=False)
         self.assertNotIn("projects/acme/knowledges/001_", r.stdout)
 
+    def test_task_done_by_path_stale_doctor_and_done_is_not_current(self):
+        """done は人が言ったときか doctor の棚卸しで付ける（ADR 0018）。current は「最後に触ったタスク」のまま。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "a")
+        self.ws("task", "new", "acme", "b")
+        tasks = self.root / "projects/acme/tasks"
+        a, b = (next(tasks.glob(f"*_{s}")) for s in ("a", "b"))
+        a_rel, b_rel = (t.relative_to(self.root).as_posix() for t in (a, b))
+        # 別セッションが b を進めている最中でも、path 指定なら a だけ閉じられ current は b のまま
+        e1 = {"CLAUDE_CODE_SESSION_ID": "sess-1"}
+        self.assertIn(b.name, self.ws("task", "current", env=e1).stdout)
+        out = self.ws("task", "done", a_rel, env=e1).stdout
+        self.assertIn(f"完了: {a_rel}", out)
+        self.assertNotIn("解除", out)
+        self.assertIn("status: done", (a / "index.md").read_text(encoding="utf-8"))
+        self.assertIn(b.name, self.ws("task", "current", env=e1).stdout)
+        self.assertIn(b.name, self.ws("task", "current").stdout)
+        self.assertIn("[done]", (tasks / "index.md").read_text(encoding="utf-8"))
+        # doctor: doing のまま 14 日超の b は「task done <path>」付きで列挙、今日触った c は出ない。done の a も出ない
+        self.ws("task", "new", "acme", "c")
+        c_rel = next(tasks.glob("*_c")).relative_to(self.root).as_posix()
+        idx = b / "index.md"
+        idx.write_text(re.sub(r"^updated: .*$", "updated: 2020-01-01", idx.read_text(encoding="utf-8"), flags=re.M),
+                       encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertIn(f"{b_rel}: doing のまま updated が", r.stdout)
+        self.assertIn(f"scripts/ws task done {b_rel}", r.stdout)
+        self.assertNotIn(f"{c_rel}: doing のまま", r.stdout)
+        self.assertNotIn(f"{a_rel}: doing のまま", r.stdout)
+        # frontmatter を直接 done にされたタスク（task done を経ていない）は current 扱いしない
+        self.ws("task", "use", b_rel)
+        idx.write_text(idx.read_text(encoding="utf-8").replace("status: doing", "status: done"), encoding="utf-8")
+        r = self.ws("task", "current", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("未設定", r.stdout)
+        self.assertIn("未設定", self.ws("hook", "session-start", stdin="{}").stdout)
+        self.assertEqual(self.ws("task", "use", b_rel, check=False).returncode, 1)
+        self.assertEqual(self.ws("task", "done", check=False).returncode, 1)  # current が無いので path 無しは拒否
+        # 引数なしは従来どおり current を閉じて解除する
+        self.ws("task", "use", c_rel)
+        self.assertIn("解除", self.ws("task", "done").stdout)
+        self.assertFalse((self.root / ".ws/current").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

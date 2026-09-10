@@ -26,6 +26,7 @@ PROJECTS = ROOT / "projects"
 # 案件をまたぐ自社の事実（組織図・決裁範囲・社内システム・標準手順・共通用語）。案件と同じ形で、案件側と重なれば案件側が勝つ（ADR 0015）
 COMMON = ROOT / "knowledges"
 COMMON_STALE_DAYS = 90  # 共通ナレッジの updated がこれを超えたら doctor が警告する（3 ヶ月変わらない事実だけを載せる）
+TASK_STALE_DAYS = 14  # doing のまま updated がこれを超えたタスクを doctor が列挙する（done は人が言ったときか棚卸しで付ける。ADR 0018）
 TEMPLATES = ROOT / "templates"
 CURRENT = ROOT / ".ws" / "current"
 IDX_BEGIN = "<!-- ws:index -->"
@@ -223,7 +224,9 @@ def current_task(sid: str | None = None) -> Path | None:
     if not text:
         return None  # 無い、または task done 直後の空の写し（未設定）
     p = ROOT / text
-    return p if (p / "index.md").exists() else None
+    if not (p / "index.md").exists() or read_frontmatter(p / "index.md")[0].get("status") == "done":
+        return None  # 消えたか、task done を経ずに frontmatter を done にされた
+    return p
 
 
 def set_current(task_dir: Path, sid: str | None = None):
@@ -266,6 +269,8 @@ def cmd_task_use(args):
     d = Path(args.path) if Path(args.path).is_absolute() else ROOT / args.path
     if not (d / "index.md").exists():
         die(f"{args.path} にタスクの index.md が無い")
+    if read_frontmatter(d / "index.md")[0].get("status") == "done":
+        die(f"{rel(d)} は done。続けるなら index.md の status を doing に戻す")
     set_current(d, session_id())
     print(f"現在のタスク: {rel(d)}")
 
@@ -281,18 +286,24 @@ def cmd_task_current(args):
 
 def cmd_task_done(args):
     sid = session_id()
-    t = current_task(sid)
-    if not t:
-        die("現在のタスクが無い")
+    if args.path:
+        t = Path(args.path) if Path(args.path).is_absolute() else ROOT / args.path
+        if not (t / "index.md").exists():
+            die(f"{args.path} にタスクの index.md が無い")
+    else:
+        t = current_task(sid)
+        if not t:
+            die("現在のタスクが無い（閉じるタスクを scripts/ws task done <path> で指定できる）")
     set_frontmatter(t / "index.md", status="done", updated=today())
-    if sid:
+    copy = _sess(sid, "current") if sid else None
+    if copy and copy.exists() and copy.read_text(encoding="utf-8").strip() == rel(t):
         # 空の写し = 未設定。消すと次の解決で .ws/current（他のセッションが最後に設定したタスク）を拾ってしまう
-        SESSIONS.mkdir(parents=True, exist_ok=True)
-        _sess(sid, "current").write_text("", encoding="utf-8")
-    if CURRENT.exists() and CURRENT.read_text(encoding="utf-8").strip() == rel(t):
+        copy.write_text("", encoding="utf-8")
+    released = CURRENT.exists() and CURRENT.read_text(encoding="utf-8").strip() == rel(t)
+    if released:
         CURRENT.unlink()  # 他のセッションが別のタスクに切り替えていたら、そちらは残す
     update_index(t.parent)
-    print(f"完了: {rel(t)}（現在のタスクを解除した）")
+    print(f"完了: {rel(t)}" + ("（現在のタスクを解除した）" if released or not args.path else ""))
 
 
 # ---- 情報源 ----------------------------------------------------------------
@@ -682,6 +693,10 @@ def cmd_doctor(args):
                 problems.append(f"{rel(t)}: references/ が空（情報源を記録していない）")
             if meta.get("status") != "doing":
                 continue
+            age = _days_since(meta.get("updated", ""))
+            if age is not None and age > TASK_STALE_DAYS:
+                problems.append(f"{rel(t)}: doing のまま updated が {age} 日前（{TASK_STALE_DAYS} 日超）。"
+                                f"終わっていれば scripts/ws task done {rel(t)}、続けるなら index.md の現在地を更新する")
             for rf in (refs.glob("*.md") if refs.is_dir() else []):
                 if rf.name == "index.md" or rf.name.endswith(DERIVED_SUFFIXES):
                     continue
@@ -1059,7 +1074,9 @@ def main(argv=None):
     q.add_argument("path", help="projects/<案件>/tasks/<タスク>")
     q.set_defaults(fn=cmd_task_use)
     t.add_parser("current", help="現在のタスクを表示する").set_defaults(fn=cmd_task_current)
-    t.add_parser("done", help="現在のタスクを完了にし、現在のタスクを解除する").set_defaults(fn=cmd_task_done)
+    q = t.add_parser("done", help="タスクを完了にする（省略時は現在のタスク。現在のタスクなら解除する）")
+    q.add_argument("path", nargs="?", help="projects/<案件>/tasks/<タスク>。現在のタスク以外を閉じるとき（doctor が放置を知らせる）")
+    q.set_defaults(fn=cmd_task_done)
 
     r = sub.add_parser("ref", help="情報源").add_subparsers(dest="sub", required=True)
     q = r.add_parser("add", help="URL かファイルを現在のタスクの references/ に保存する")
