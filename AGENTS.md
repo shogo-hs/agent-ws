@@ -31,7 +31,7 @@
 
 ## 安いモデルの調査係に渡す仕事
 
-次の 4 つを満たす仕事は本線で読まず `researcher`（Claude Code は `.claude/agents/researcher.md`＝haiku、Codex は `.codex/agents/researcher.toml`＝gpt-5.4-mini。Codex で名前指定ができない版では `spawn_agent` に `model="gpt-5.4-mini", reasoning_effort="low"` を渡す）に渡す: ①出力を機械で確かめられる（ファイルができる・抽出した項目が数えられる）②読む量が多く返すものが短い ③本線が途中経過を知らなくても判断できる ④手順が有限で判断の分岐が少ない。
+次の 4 つを満たす仕事は本線で読まず `researcher`（Claude Code は `.claude/agents/researcher.md`＝haiku、Codex は `.codex/agents/researcher.toml`＝gpt-5.6-luna・max。Codex で名前指定ができない版では `spawn_agent` に `model="gpt-5.6-luna", reasoning_effort="max", fork_turns="none"` を渡す。`fork_turns="all"` だと親の会話ごと複製され、モデルの指定も効かない）に渡す: ①出力を機械で確かめられる（ファイルができる・抽出した項目が数えられる）②読む量が多く返すものが短い ③本線が途中経過を知らなくても判断できる ④手順が有限で判断の分岐が少ない。
 該当するもの: URL や渡された資料の通読と要約、文字起こしの正規化後の決定事項・宿題の抽出、用語集候補の検出、大量のファイルからの該当箇所探し。本線に残すもの: タスクの目的と進め方、見積の計算、報告文、ナレッジに昇格するかの判断。渡し方は 1 回でまとめて渡す（親のキャッシュは使えない）。index.md のどの段階か・期待する成果物のパス・出所の書き方を指示に含める。戻ってきたら成果物の有無と引用の有無で確認し、本文は本線に持ち込まない。
 
 ## 禁止

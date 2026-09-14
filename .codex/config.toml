@@ -3,6 +3,8 @@ web_search = "disabled"
 
 # 調査係の既定。0.153.4 の codex exec では spawn_agent に名前指定が無く .codex/agents/*.toml を名前で呼べないので、
 # 既定モデルで安いモデルに寄せる。実装を委譲する用途が出たら外す。
+# gpt-5.4-mini は 2026-08-31 に Codex（ChatGPT ログイン）から退役した。置き換え先は公式どおり gpt-5.6-luna（ADR 0020）。
+# 推論量は max。low は通読して抜く仕事で読み切らずに書き始める（bench/researcher_effort.py の実測。ADR 0020）。
 [agents]
-default_subagent_model = "gpt-5.4-mini"
-default_subagent_reasoning_effort = "low"
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"

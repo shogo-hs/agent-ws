@@ -38,7 +38,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「続きをやって」 | task-resume スキル。起動時に hook が差し込んだ現在のタスクの `index.md` を読み、「次の一手」から再開する |
 | 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）か新しいセッション（Codex）を促す |
 | 「この URL を調べて」「この資料を読んで」 | `scripts/ws ref add <URL>` で本文丸ごとを references/ に残してから読む（WebFetch は hook が止めて ref add に誘導する） |
-| 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-5.4-mini）に渡し、結論と出所だけ受け取る |
+| 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-5.6-luna）に渡し、結論と出所だけ受け取る |
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す。Claude Code では researcher の中（fork）で走り、本線には要点（`.summary.md`）だけが戻る |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」「IdP 連携の担当は鈴木さん」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` / `glossary add acme "IdP 連携" --relation "→担当: 鈴木"` で用語集に足す（「関係」は任意。3 ヶ月変わらないものだけ） |
@@ -84,7 +84,7 @@ agent-ws/
 ├── .claude/agents/researcher.md  調査係サブエージェント（Claude Code・haiku）
 ├── .codex/hooks.json      Codex CLI の hooks 登録（中身は同じスクリプトを呼ぶ）
 ├── .codex/config.toml     Codex CLI のプロジェクト設定（web_search を外す、調査係の既定モデル）
-├── .codex/agents/researcher.toml  調査係サブエージェント（Codex CLI・gpt-5.4-mini）
+├── .codex/agents/researcher.toml  調査係サブエージェント（Codex CLI・gpt-5.6-luna）
 ├── .agents/skills/        スキル（両ツール共通の SKILL.md）
 │   ├── task-start/        新しいタスクを切って着手する
 │   ├── task-resume/       既存タスクを index.md から再開する

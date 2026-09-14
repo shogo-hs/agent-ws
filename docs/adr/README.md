@@ -12,7 +12,7 @@
 | [0005](0005-lessons-on-first-correction.md) | 指摘は 1 回目で LESSONS.md に残す | 採用 | 2 回目を待つ規則は機能しない。20 行超で減らす |
 | [0006](0006-reference-summary-and-original-pair.md) | reference は要点と原文の対 | 採用 | compact 後に中身ごと残るのは小さいファイルだけ |
 | [0007](0007-transcript-in-fork.md) | 文字起こしは fork の中で処理する | 採用 | 本線に本文を入れない。Codex は規約と既定モデルで代替 |
-| [0008](0008-delegation-four-conditions.md) | 調査係へ渡す仕事は 4 条件で決める | 採用 | 1 回でまとめて渡す。効果は bench で未測定 |
+| [0008](0008-delegation-four-conditions.md) | 調査係へ渡す仕事は 4 条件で決める | 採用（Codex 側の受け皿は 0020 で置き換え） | 1 回でまとめて渡す。効果は bench で未測定 |
 | [0009](0009-inject-index-at-session-start.md) | SessionStart で index.md 全文とナレッジ一覧を注入する | 採用 | 消費の 93〜95% はターンごとの再送。Read のターンを省く。効果は bench で未測定 |
 | [0010](0010-deny-cross-task-scans.md) | projects/ を横断する一覧・検索は hook で拒否する | 採用 | find projects や path 無しの Grep は他タスクの本文を返す |
 | [0011](0011-no-apm-distribution.md) | 配布に Microsoft APM を使わない | 採用 | 逐語の重複は researcher の 4 行だけ。移すと単一正本がハーネスごとのコピーに戻る |
@@ -24,6 +24,8 @@
 | [0017](0017-disable-claude-code-advisor.md) | Claude Code の Advisor（相談役モデル）はリポジトリの settings で外す | 採用 | 正誤に効かず（5/5 対 5/5）相談が起きた本だけ 3.4〜3.7 倍。相談 1 回で Opus が 44k を非キャッシュで読む。`env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`。戻すなら行を消す |
 | [0018](0018-done-by-human-or-doctor.md) | done は人が言ったときか doctor の棚卸しで付ける。current は「最後に触ったタスク」 | 採用 | エージェントは完了を判断できない。`task done [path]`、doing 14 日放置を doctor が列挙、done は current 扱いしない。セッション内直列・セッション間並列のどちらでも成り立つ |
 | [0019](0019-windows-without-changing-linux.md) | Windows から同じ hooks と CLI で使えるようにする。Linux 側の挙動は変えない | 採用 | Claude Code は exec 形式で `python` を直接起動、Codex は `commandWindows`。`\` → `/` の正規化・UTF-8 化・PowerShell の検知は `os.name == "nt"` / `tool == "PowerShell"` の下だけ。手打ち表記は置換しない |
+
+| [0020](0020-codex-researcher-luna-max-read-to-end.md) | Codex の調査係は gpt-5.6-luna・max にし、researcher に「末尾まで読み切る」規則を足す | 採用 | gpt-5.4-mini は 2026-08-31 に Codex（ChatGPT ログイン）から退役。low は読み切らずに書き始め、規則を足しても 8 回中 2 回は決定の 4 割を落とす。max は 7 回とも落とさず、代償は時間 2.4 倍と luna 単価のトークン 3 倍 |
 
 ## 書き方
 

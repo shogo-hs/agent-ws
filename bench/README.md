@@ -53,6 +53,21 @@ A は `.claude/settings.json` の `env` で Advisor を外しているので（A
 相談した回数と Opus が読んだ分は transcript の `usage.iterations` から `advisor_calls` / `advisor_in` / `advisor_out` に数え、モデル別の費用は `model_usage` に残ります。
 結果は `results/runs_advisor_a.jsonl`（Advisor なし）と `results/runs_advisor_v.jsonl`（あり）。判断は `docs/sources/advisor.md` から辿れます。
 
+## 調査係のモデルと推論量（`researcher_effort.py`）
+
+Claude Code の A/B/C とは別に、Codex の調査係（`.codex/agents/researcher.toml`）に使うモデルと `model_reasoning_effort` を決めるための実測です（ADR 0020）。
+架空の会議文字起こし（1,134 行・69 KB。決定 20・宿題 15・却下や検討中の案 12 を雑談に埋めた）から決定事項と宿題を `out.md` に抜かせ、
+正解の語が正しい節にあるか・却下案が混ざっていないかを数えます（47 項目の正答率）。`codex exec --json` の `turn.completed` からトークンも取ります。
+
+```
+WS_BENCH_RUNS=/var/tmp/agent-ws-bench uv run python bench/researcher_effort.py gen
+uv run python bench/researcher_effort.py run 3 bare gpt-5.6-luna:low,gpt-5.6-luna:medium,gpt-5.6-luna:max   # 素の依頼文
+uv run python bench/researcher_effort.py run 4 rule gpt-5.6-luna:low                                          # researcher に足した「末尾まで読み切る」規則つき
+uv run python bench/researcher_effort.py summary
+```
+
+結果は `results/runs_effort.jsonl`（1 行 1 run。正答率の内訳・トークン・秒）。ChatGPT ログインで走るので費用欄は無く、トークン数を API 価格で換算して読みます。
+
 実行ディレクトリは `WS_BENCH_RUNS`（既定 `/var/tmp/agent-ws-bench/runs`）の下に 1 セッション 1 つ組みます。
 作業スペースの中に置くと親の CLAUDE.md が読まれて条件が汚れるので、外に置いてください。
 起動は次のとおりで、グローバルの hooks・プラグイン・MCP を外し、プロジェクトの `.claude/settings.json`（A の hooks）と CLAUDE.md だけを載せます。
