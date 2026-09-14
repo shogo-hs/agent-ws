@@ -12,7 +12,7 @@
 | [0005](0005-lessons-on-first-correction.md) | 指摘は 1 回目で LESSONS.md に残す | 採用 | 2 回目を待つ規則は機能しない。20 行超で減らす |
 | [0006](0006-reference-summary-and-original-pair.md) | reference は要点と原文の対 | 採用 | compact 後に中身ごと残るのは小さいファイルだけ |
 | [0007](0007-transcript-in-fork.md) | 文字起こしは fork の中で処理する | 採用 | 本線に本文を入れない。Codex は規約と既定モデルで代替 |
-| [0008](0008-delegation-four-conditions.md) | 調査係へ渡す仕事は 4 条件で決める | 採用 | 1 回でまとめて渡す。効果は bench で未測定 |
+| [0008](0008-delegation-four-conditions.md) | 調査係へ渡す仕事は 4 条件で決める | 採用（Codex 側の受け皿は 0020 で置き換え） | 1 回でまとめて渡す。効果は bench で未測定 |
 | [0009](0009-inject-index-at-session-start.md) | SessionStart で index.md 全文とナレッジ一覧を注入する | 採用 | 消費の 93〜95% はターンごとの再送。Read のターンを省く。効果は bench で未測定 |
 | [0010](0010-deny-cross-task-scans.md) | projects/ を横断する一覧・検索は hook で拒否する | 採用 | find projects や path 無しの Grep は他タスクの本文を返す |
 | [0011](0011-no-apm-distribution.md) | 配布に Microsoft APM を使わない | 採用 | 逐語の重複は researcher の 4 行だけ。移すと単一正本がハーネスごとのコピーに戻る |
@@ -21,6 +21,7 @@
 | [0014](0014-no-ontology-layer.md) | 重いオントロジー（グラフ DB・MCP・precondition）は入れない。軽い関係層は実務で判断する | 保留 | 前提の注入・用語集・hook が同等物。関係の欄は任意で足し、手戻りの 3 型を LESSONS に数えて 3 案件後に決める |
 | [0016](0016-no-llm-retrospective-count-instead.md) | セッション終了時の自動レトロスペクティブは LLM に振り返らせない。数えられる指標を残し、規約の変更は人が決める | 提案 | SessionEnd は LLM 型 hook 不可・最大 60 秒。先行実装 10 本に効果の測定なし。正解の無い自己判定は精度を下げ、自動追記は 1,421 行に育つ。`ws retro` で拒否・ターン・文脈を数え、doctor が人に見せる |
 | [0015](0015-common-knowledges-for-cross-project-facts.md) | 案件をまたぐ自社の事実は repo 直下の knowledges/（共通）に置く | 採用 | 組織図・決裁範囲・社内システム・標準手順・共通用語。3 ヶ月変わらないものだけ、案件側が勝つ、1 ファイル 1 担当で 90 日で doctor が警告。注入の増分は 274 字 |
+| [0020](0020-codex-researcher-luna-max-read-to-end.md) | Codex の調査係は gpt-5.6-luna・max にし、researcher に「末尾まで読み切る」規則を足す | 採用 | gpt-5.4-mini は 2026-08-31 に Codex（ChatGPT ログイン）から退役。low は読み切らずに書き始め、規則を足しても 8 回中 2 回は決定の 4 割を落とす。max は 7 回とも落とさず、代償は時間 2.4 倍と luna 単価のトークン 3 倍 |
 
 ## 書き方
 
