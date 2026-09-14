@@ -51,6 +51,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 ### セッションの切り方
 
 1 タスク = 1 セッションにします。新しいタスクは新しいセッションで始め、別のタスクに移るときは切り替えを頼んだあと、Claude Code なら `/clear`、Codex CLI なら新しいセッションを開きます。
+ただし、セッションを始めるたびに開始時の書き込み（約 15k トークン。cache 作成の単価は読みの 20 倍で、trap の費用の約 4 割）を払うので、質問に答えるだけの用事にセッションを切らないでください。
 hook は起動のたび（`/clear` や compact のあとも）に現在のタスクを差し込むので、切り替え忘れが起きにくくなっています。
 Claude Code では `/clear` の前に `/rename <タスク名>` しておくと `/resume` で戻れます。起動直後に `/context` を一度見ると、AGENTS.md と hook の注入がコンテキストをどれだけ使っているか分かります。
 長い調べ物は、結論と出所だけを持ち帰るようサブエージェントに分けると、本線のコンテキストが汚れません。
@@ -134,6 +135,14 @@ Codex CLI は hook の注入が既定で約 2,500 トークンに切られるた
 
 `.claude/settings.json` の `statusLine` が `scripts/ws statusline` を呼び、画面の下に「現在のタスク | モデル | 文脈の使用率 | このセッションの費用（定価）」を常時出します。値は Claude Code が渡すもの（`context_window.used_percentage`・`cost.total_cost_usd`）をそのまま表示するだけで、トークンは使いません。
 文脈の使用率が上がってきたら `/compact`、タスクの切れ目なら `/clear` の頃合いです。自分の statusLine を使っているなら `.claude/settings.json` の `statusLine` を消してください（project の設定が user の設定より優先されます）。Codex CLI には同等の設定が無いので `/status` で見ます。
+
+### 使わないツールの定義を外す（Claude Code）
+
+`.claude/settings.json` の `permissions.deny` に `ListAgents`・`ReportFindings`・`ScheduleWakeup`・`Workflow` を置いています。deny に裸のツール名を書くと、そのツールの定義がモデルに送るツール一覧から外れます（Agent SDK の permissions 文書）。この 4 本は Claude Code が常時ロードする（tool search で遅延されない）ツールで、案件の仕事では呼ばれません。毎ターン固定で送られる分は 35,105 → 30,221 トークン（−14%。Claude Code 2.1.26x・Sonnet 5・`bench/results/fixed_v3.md`）、bench の trap では処理した入力が 232k → 166k（−28%、各 5 回、p=0.048）で、正誤は変わりません。`/loop`（ScheduleWakeup）や Workflow が要る人は該当行を消してください。Agent（researcher）と Skill（スキル 5 本）は残しています（外すとさらに −12k ですが委譲とスキルが使えなくなります）。deny に `ToolSearch` や TodoWrite 等の task-tracking ツール名を書くと逆に増えるので書かないでください（前者は遅延ロードが切れて +16k、後者は一群が opt-in されて相殺）。Codex にはツール定義を外す設定が無いので Claude Code だけです。
+
+### 出力（thinking）を減らす調整ノブ
+
+1 セッションの費用を単価で分けると、cache 作成が 40〜55%、出力（thinking 込み）が 22〜30%、cache 読みが 23〜38% でした（bench の A 条件 40 セッション。`bench/cost_breakdown.py`）。出力は入力の 5 倍の単価で、Sonnet 4.6 以降は過去ターンの thinking も文脈に残って入力として課金されるので、effort を下げると出力と再送の両方が減ります。bench の trap（各 5 回）では `--effort medium` で費用 −14%（p=0.046）、`--effort low` で −18%（p=0.048）、`MAX_THINKING_TOKENS=0` で −23%（p=0.12）、いずれも 5/5 正解でした。資料を作る newtask（各 5 回）でも medium は必須 8 項目を 5/5 で満たし費用 −10%（p=0.38。誤差の範囲）でした。ただし判断の重い仕事で同じとは言えないので、既定は変えていません。安く回したい仕事では `claude --effort medium` で起動するか、`.claude/settings.json` に `"effortLevel": "medium"` を足してください（Codex は `.codex/config.toml` の `model_reasoning_effort`）。effort をセッションの途中で変えるとキャッシュが作り直しになるので、最初に決めます。
 
 ### hooks が止めるもの
 

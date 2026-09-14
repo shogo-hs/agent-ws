@@ -3,6 +3,9 @@
   "env": {
     "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "1"
   },
+  "permissions": {
+    "deny": ["ListAgents", "ReportFindings", "ScheduleWakeup", "Workflow"]
+  },
   "statusLine": {
     "type": "command",
     "command": "python \"$CLAUDE_PROJECT_DIR/scripts/ws\" statusline"
