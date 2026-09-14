@@ -1,0 +1,4 @@
+# Windows の Path.write_text は CRLF を書く。コミット時に LF へ揃える（読む側は universal newline で吸収するので動作は変わらない）
+* text=auto eol=lf
+# csv モジュールは CRLF を書く（計測結果。揃えない）
+bench/results/*.csv -text

@@ -16,8 +16,8 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 ## 導入（初回だけ）
 
 1. このリポジトリを自分の場所に置きます（GitHub なら「Use this template」→ clone）。
-2. `python3` が使えることを確認します（3.9 以上。追加パッケージは不要）。
-3. 実行権限が落ちていたら `chmod +x scripts/ws` を実行します。
+2. `python` が PATH にあることを確認します（3.9 以上。追加パッケージは不要）。hooks はこの名前で起動します（Debian 系で無ければ `python-is-python3`、Windows は python.org の installer で「Add python.exe to PATH」）。
+3. 実行権限が落ちていたら `chmod +x scripts/ws` を実行します（Linux / macOS）。Windows は `python scripts/ws …` と前置きして叩きます。
 4. リポジトリの**ルートで** `claude` または `codex` を起動します。
    - Claude Code: 初回にフォルダを信頼するか聞かれます。信頼すると `.claude/settings.json` の hooks が有効になります。
    - Codex CLI（0.153 以上）: 初回にフォルダを信頼するか聞かれます。信頼したあと `/hooks` を開き、`.codex/hooks.json` の 4 つの hook を確認して trust します。
@@ -187,7 +187,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
 - **Claude Code の Advisor（相談役モデル）は外しています**（`.claude/settings.json` の `env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`）。Advisor は相談のたびに固定分ごと会話全文を Opus に非キャッシュで読ませます。agent-ws の仕事では正誤に効かず（5/5 対 5/5）、相談が起きた本だけ費用が 3.4〜3.7 倍になりました（[ADR 0017](docs/adr/0017-disable-claude-code-advisor.md)）。戻すならその行を消してください（`/advisor` も使えるようになります）。
 - `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しいセッションと `/clear` のあとは、最後に設定したタスク（`.ws/current`）から始まります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
-- Windows では `.claude/skills` の symlink を作るのに開発者モードか管理者権限が要ります。`python3` が `py -3` の環境では `.claude/settings.json` と `.codex/hooks.json` のコマンドを書き換えてください。
+- **Windows でも同じ hooks が動きます**（[ADR 0019](docs/adr/0019-windows-without-changing-linux.md)）。Claude Code の hooks はシェルを介さない exec 形式で `python` を直接起動するので Git Bash は任意です（PowerShell だけでも動きます）。ツール入力がバックスラッシュ区切りで届いても、他タスクの拒否・横断検索の拒否は同じように効きます（PowerShell ツールの `Get-ChildItem -Recurse` / `Select-String` / `Invoke-WebRequest` も止めます）。前提は 2 つ。`python` が PATH にあること、`.claude/skills` の symlink を作るために開発者モードを有効にして `git clone -c core.symlinks=true` すること（symlink が無いと Claude Code からスキルが見えません）。エージェントに `scripts/ws …` を叩かせる文面は Linux と共通なので、Windows では最初の 1 回だけ失敗して `python scripts/ws …` に読み替えます。
 - Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。今回 user-prompt-submit に `--ttl 30` を足したので、更新後は `/hooks` で trust し直してください。
 
 ## 計測
