@@ -58,5 +58,5 @@
 | # | 何を | ファイル | 結果 |
 |---|---|---|---|
 | M1 | 実セッション 185 本（agent-ws 12・workspace 173）の transcript から、振り返りに渡す入力量を 3 案で集計 | `bench/retro_cost.csv`・`bench/measure_retro_cost.py` | 丸ごと: workspace 中央値 178,832・p90 517,746（43% が 20 万超で haiku に入らない）。text だけ: 1,266・5,819。user だけ: 82・670。agent-ws は 38,959／21／21 |
-| M2 | `claude -p --model haiku` を空ディレクトリで 1 回呼ぶ下駄 | `bench/retro_floor.json` | input 10・cache_creation 7,036・cache_read 13,615・output 58。0.0157 USD・API 1.4 秒・壁時計 3.35 秒。**text だけ／user だけの案では下駄が主成分** |
+| M2 | `claude -p --model haiku` を空ディレクトリで 1 回呼ぶだけで固定で乗る分 | `bench/retro_floor.json` | input 10・cache_creation 7,036・cache_read 13,615・output 58。0.0157 USD・API 1.4 秒・壁時計 3.35 秒。**text だけ／user だけの案ではこの固定分が主成分** |
 | M3 | 既存の記録の実績 | `LESSONS.md`・auto-memory・`tasks/lessons.md` | agent-ws LESSONS.md 0 行（12 セッション）。auto-memory の feedback 21 件／約 5 か月（週 1〜2 件）。上限なしの `tasks/lessons.md` は 1,421 行・168 見出しで障害記録が主（ADR 0005 の 1,360 行から更に増加） |

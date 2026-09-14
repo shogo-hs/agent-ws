@@ -909,6 +909,86 @@ class WsFlowTest(unittest.TestCase):
         r = self.ws("doctor", check=False)
         self.assertNotIn("projects/acme/knowledges/001_", r.stdout)
 
+    def test_task_done_by_path_stale_doctor_and_done_is_not_current(self):
+        """done は人が言ったときか doctor の棚卸しで付ける（ADR 0018）。current は「最後に触ったタスク」のまま。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "a")
+        self.ws("task", "new", "acme", "b")
+        tasks = self.root / "projects/acme/tasks"
+        a, b = (next(tasks.glob(f"*_{s}")) for s in ("a", "b"))
+        a_rel, b_rel = (t.relative_to(self.root).as_posix() for t in (a, b))
+        # 別セッションが b を進めている最中でも、path 指定なら a だけ閉じられ current は b のまま
+        e1 = {"CLAUDE_CODE_SESSION_ID": "sess-1"}
+        self.assertIn(b.name, self.ws("task", "current", env=e1).stdout)
+        out = self.ws("task", "done", a_rel, env=e1).stdout
+        self.assertIn(f"完了: {a_rel}", out)
+        self.assertNotIn("解除", out)
+        self.assertIn("status: done", (a / "index.md").read_text(encoding="utf-8"))
+        self.assertIn(b.name, self.ws("task", "current", env=e1).stdout)
+        self.assertIn(b.name, self.ws("task", "current").stdout)
+        self.assertIn("[done]", (tasks / "index.md").read_text(encoding="utf-8"))
+        # doctor: doing のまま 14 日超の b は「task done <path>」付きで列挙、今日触った c は出ない。done の a も出ない
+        self.ws("task", "new", "acme", "c")
+        c_rel = next(tasks.glob("*_c")).relative_to(self.root).as_posix()
+        idx = b / "index.md"
+        idx.write_text(re.sub(r"^updated: .*$", "updated: 2020-01-01", idx.read_text(encoding="utf-8"), flags=re.M),
+                       encoding="utf-8")
+        r = self.ws("doctor", check=False)
+        self.assertIn(f"{b_rel}: doing のまま updated が", r.stdout)
+        self.assertIn(f"scripts/ws task done {b_rel}", r.stdout)
+        self.assertNotIn(f"{c_rel}: doing のまま", r.stdout)
+        self.assertNotIn(f"{a_rel}: doing のまま", r.stdout)
+        # frontmatter を直接 done にされたタスク（task done を経ていない）は current 扱いしない
+        self.ws("task", "use", b_rel)
+        idx.write_text(idx.read_text(encoding="utf-8").replace("status: doing", "status: done"), encoding="utf-8")
+        r = self.ws("task", "current", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("未設定", r.stdout)
+        self.assertIn("未設定", self.ws("hook", "session-start", stdin="{}").stdout)
+        self.assertEqual(self.ws("task", "use", b_rel, check=False).returncode, 1)
+        self.assertEqual(self.ws("task", "done", check=False).returncode, 1)  # current が無いので path 無しは拒否
+        # 引数なしは従来どおり current を閉じて解除する
+        self.ws("task", "use", c_rel)
+        self.assertIn("解除", self.ws("task", "done").stdout)
+        self.assertFalse((self.root / ".ws/current").exists())
+
+
+    def test_hook_treats_powershell_like_bash(self):
+        """Windows の PowerShell ツール。横断検索と Web 取得は Bash と同じ理由文で拒否し、自タスク内とローカルは通す。"""
+        task = self._task()
+        rel = task.relative_to(self.root).as_posix()
+        for cmd in ("Get-ChildItem projects -Recurse", "gci -Recurse", "dir projects/acme/tasks",
+                    "Select-String -Path projects/acme -Pattern 単価", "ls projects"):
+            r = self.ws("hook", "pre-tool-use", stdin=json.dumps({"tool_name": "PowerShell", "tool_input": {"command": cmd}}))
+            self.assertIn("横断して一覧・検索しない", r.stdout, cmd)
+        for cmd in ("Invoke-WebRequest https://example.com/x", "iwr -Uri https://example.com/x", "curl https://example.com/x"):
+            r = self.ws("hook", "pre-tool-use", stdin=json.dumps({"tool_name": "PowerShell", "tool_input": {"command": cmd}}))
+            self.assertIn('"deny"', r.stdout, cmd)
+            self.assertIn("ref add", r.stdout, cmd)  # curl/wget と同じ誘導
+        self.assertEqual(self.hook("PowerShell", {"command": "Get-Content projects/acme/tasks/20200101_other/index.md"}), "deny")
+        self.assertIsNone(self.hook("PowerShell", {"command": f"Get-Content {rel}/index.md"}))
+        self.assertIsNone(self.hook("PowerShell", {"command": "iwr http://127.0.0.1:8000/x"}))
+        self.assertIsNone(self.hook("PowerShell", {"command": "python scripts/ws task current"}))
+        # Bash 側の検知語は増えていない（Linux の挙動を変えない）
+        self.assertIsNone(self.hook("Bash", {"command": "Invoke-WebRequest https://example.com/x"}))
+        self.assertIsNone(self.hook("Bash", {"command": "gci -Recurse"}))
+        self.ws("task", "done")
+        self.assertIsNone(self.hook("PowerShell", {"command": "Get-ChildItem projects -Recurse"}))
+
+    def test_posix_input_normalizes_windows_paths_without_breaking_json_escapes(self):
+        """Windows のツール入力（バックスラッシュ区切り）を / に揃える。文字列中の \" と改行のエスケープは壊さない。"""
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader("ws_mod", str(WS))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("ws_mod", loader))
+        loader.exec_module(mod)
+        raw = {"file_path": "C:\\w\\projects\\acme\\tasks\\20200101_other\\index.md", "command": 'echo "a\\b"\nls'}
+        self.assertEqual(mod.TASK_RE.findall(json.dumps(raw)), [])  # 揃えないと他タスクの拒否が素通りする
+        out = mod._posix_input(raw)
+        self.assertEqual(out["file_path"], "C:/w/projects/acme/tasks/20200101_other/index.md")
+        self.assertEqual(out["command"], 'echo "a/b"\nls')
+        self.assertEqual(mod.TASK_RE.findall(json.dumps(out)), [("acme", "20200101_other")])
+
 
 if __name__ == "__main__":
     unittest.main()

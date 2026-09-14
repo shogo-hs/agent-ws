@@ -392,12 +392,15 @@ def cmd_build(args):
 
 # ---- 1 セッション走らせて数える ----------------------------------------------------------
 
-def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: bool = False) -> tuple[dict, str, float, int]:
+def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: bool = False,
+               advisor: str | None = None) -> tuple[dict, str, float, int]:
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     allowed = ALLOWED_TOOLS + (",Agent" if delegate else "")
     cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json",
            "--setting-sources", "project", "--strict-mcp-config", "--max-turns", str(max_turns),
            "--allowedTools", allowed]
+    if advisor:
+        cmd += ["--advisor", advisor]  # Claude Code の Advisor（相談役モデル）を付ける。効いたかは transcript の advisor_calls で数える
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=rundir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, timeout=1800)
@@ -493,7 +496,8 @@ def other_task_pred(cond: str, exp: str, stage: int | None, baseline: set[str]):
 def analyze(tpath: Path, rundir: Path, is_other) -> dict:
     seen, tools = set(), []
     m = dict(in_total=0, ctx_final=0, out_total=0, turns=0, reads=0, searches=0, writes=0,
-             other_task=0, inbox_reads=0, denied=0, delegates=0, model="")
+             other_task=0, inbox_reads=0, denied=0, delegates=0, model="",
+             advisor_calls=0, advisor_in=0, advisor_out=0)
     for line in tpath.read_text(encoding="utf-8").splitlines():
         try:
             o = json.loads(line)
@@ -510,7 +514,13 @@ def analyze(tpath: Path, rundir: Path, is_other) -> dict:
                 m["in_total"] += inp
                 m["ctx_final"] = inp
                 m["out_total"] += u.get("output_tokens", 0)
+                for it in u.get("iterations") or []:  # Advisor の分は上位の合計に入らず iterations にだけ出る
+                    if it.get("type") == "advisor_message":
+                        m["advisor_in"] += it.get("input_tokens", 0) + it.get("cache_creation_input_tokens", 0) + it.get("cache_read_input_tokens", 0)
+                        m["advisor_out"] += it.get("output_tokens", 0)
             for b in msg.get("content", []):
+                if b.get("type") == "server_tool_use" and b.get("name") == "advisor":
+                    m["advisor_calls"] += 1
                 if b.get("type") != "tool_use":
                     continue
                 name, inp = b.get("name", ""), b.get("input") or {}
@@ -526,7 +536,7 @@ def analyze(tpath: Path, rundir: Path, is_other) -> dict:
                     m["other_task"] += 1
                 if kind in ("read", "search") and any(p.startswith("inbox/") or "/inbox/" in p for p in ps):
                     m["inbox_reads"] += 1
-                tools.append([kind, name, ps[:6]])
+                tools.append([kind, name, [tilde(Path(p)) if p.startswith("/") else p for p in ps[:6]]])
         elif o.get("type") == "user":
             c = o.get("message", {}).get("content")
             if isinstance(c, list):
@@ -585,9 +595,9 @@ def doc_location(changed: list[str], cond: str) -> str:
 
 def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, i: int,
                 rundir: Path, prompt: str, baseline: set[str], max_turns: int, chain_id: str | None,
-                delegate: bool = False) -> dict:
+                delegate: bool = False, advisor: str | None = None) -> dict:
     before = snapshot(rundir)
-    res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate)
+    res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate, advisor)
     after = snapshot(rundir)
     changed = sorted(p for p, h in after.items() if before.get(p) != h)
     changed_text = changed_text_of(rundir, changed)
@@ -597,7 +607,8 @@ def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, 
     met = analyze(tpath, rundir, other_task_pred(cond, exp, stage, baseline)) if tpath else {}
     text_all = final + "\n" + changed_text
     rec = dict(ts=datetime.now().isoformat(timespec="seconds"), exp=exp, stage=stage, chain_id=chain_id,
-               scale=scale, cond=cond, model=model, delegate=delegate, i=i, rundir=str(rundir), session_id=sid,
+               scale=scale, cond=cond, model=model, delegate=delegate, advisor=advisor, i=i, rundir=str(rundir), session_id=sid,
+               model_usage={k: v.get("costUSD") for k, v in (res.get("modelUsage") or {}).items()},
                elapsed=round(elapsed, 1), returncode=rc, num_turns=res.get("num_turns"),
                cost_usd=res.get("total_cost_usd"), is_error=res.get("is_error"),
                permission_denials=len(res.get("permission_denials") or []),
@@ -624,24 +635,38 @@ def append_result(rec: dict, path: Path):
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+def strip_advisor_env(rundir: Path):
+    """A は settings の env で Advisor を外している（ADR 0017）。--advisor で測るときはその行だけ外す。"""
+    p = rundir / ".claude" / "settings.json"
+    if not p.exists():
+        return
+    s = json.loads(p.read_text(encoding="utf-8"))
+    if (s.get("env") or {}).pop("CLAUDE_CODE_DISABLE_ADVISOR_TOOL", None) is not None:
+        if not s["env"]:
+            del s["env"]
+        p.write_text(json.dumps(s, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, results: Path, max_turns: int,
-           delegate: bool = False) -> list[dict]:
-    suffix = "d" if delegate else ""  # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない
+           delegate: bool = False, advisor: str | None = None) -> list[dict]:
+    suffix = ("d" if delegate else "") + ("v" if advisor else "")  # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない
     rundir = RUNS_DIR / tag / f"{exp}_{scale}_{model}_{cond}{i}{suffix}"
     state = "fresh" if exp == "chain" else "doing"
     build(cond, scale, state, rundir)
+    if advisor:
+        strip_advisor_env(rundir)
     baseline = set(snapshot(rundir))
     recs = []
     if exp == "chain":
         cid = f"{tag}_{scale}_{model}_{cond}{i}{suffix}"
-        r1 = run_session(exp, 1, scale, cond, model, i, rundir, PROMPTS["chain1"], baseline, max_turns, cid, delegate)
+        r1 = run_session(exp, 1, scale, cond, model, i, rundir, PROMPTS["chain1"], baseline, max_turns, cid, delegate, advisor)
         append_result(r1, results)
-        r2 = run_session(exp, 2, scale, cond, model, i, rundir, PROMPTS["chain2"], baseline, max_turns, cid, delegate)
+        r2 = run_session(exp, 2, scale, cond, model, i, rundir, PROMPTS["chain2"], baseline, max_turns, cid, delegate, advisor)
         append_result(r2, results)
         recs = [r1, r2]
     else:
         r = run_session(exp, None, scale, cond, model, i, rundir, PROMPTS[exp], baseline,
-                        1 if exp == "base" else max_turns, None, delegate)
+                        1 if exp == "base" else max_turns, None, delegate, advisor)
         append_result(r, results)
         recs = [r]
     for r in recs:
@@ -660,12 +685,12 @@ def cmd_run(args):
     print(f"tag={tag} exp={args.exp} scale={args.scale} model={args.model} jobs={len(jobs)} -> {results}", flush=True)
     if args.jobs > 1:
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate) for c, i in jobs]
+            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor) for c, i in jobs]
             for f in futs:
                 f.result()
     else:
         for c, i in jobs:
-            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate)
+            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor)
 
 
 def cmd_rescore(args):
@@ -740,7 +765,7 @@ def load_results(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
-KEYS = ["in_total", "ctx_final", "cost_usd", "turns", "reads", "searches", "other_task", "inbox_reads", "denied", "delegates"]
+KEYS = ["in_total", "ctx_final", "cost_usd", "turns", "reads", "searches", "other_task", "inbox_reads", "denied", "delegates", "advisor_calls"]
 
 
 def cmd_summary(args):
@@ -836,7 +861,7 @@ def dotplot(rows: list[tuple[str, list[tuple[str, str, list[float]]]]], lo: floa
 
 COND_NAME = {"A": ("agent-ws", "var(--accent)"), "B": ("同じ構造・仕組みなし", "var(--warn)"), "C": ("導入前（資料の山＋メモ）", "var(--muted)")}
 ROW_LABEL = {("trap", None): "続きをやって（罠）", ("chain", 2): "引き継ぎの 2 セッション目", ("chain", 1): "引き継ぎの 1 セッション目",
-             ("newtask", None): "新規タスク（進め方の資料）", ("base", None): "下駄（1 ターン）"}
+             ("newtask", None): "新規タスク（進め方の資料）", ("base", None): "固定分（1 ターン）"}
 
 
 def cmd_fig(args):
@@ -929,6 +954,7 @@ def main(argv=None):
     p.add_argument("--max-turns", type=int, default=30)
     p.add_argument("--delegate", action="store_true",
                    help="本線が researcher（haiku）に委譲できる条件。--allowedTools に Agent を足す")
+    p.add_argument("--advisor", help="Claude Code の --advisor に渡す相談役モデル（opus 等）。付けた条件は rundir に v が付く")
     p.add_argument("--tag")
     p.add_argument("--results")
     p.set_defaults(fn=cmd_run)

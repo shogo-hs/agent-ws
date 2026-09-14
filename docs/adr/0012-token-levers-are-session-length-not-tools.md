@@ -25,6 +25,6 @@
 ## 影響
 `AGENTS.md` の「1 ターン ≒ 32k」を実測の 39k に更新し、2 乗で伸びることを書き足した。`README.md` の「自動 compact を早める」節に、これまで「測っていない」としていた損益分岐の数字（最小点 220,000 トークン、110k 未満は逆効果、compact 直後の訂正率 17.7%→41.9%）を入れた。委譲の 4 条件（0008）は変えない。サブエージェントは親の deferred tool loading を継承せず起動時点で 140〜180k を食うという報告（claude-code issue #60141・Closed as not planned）があるので、条件を緩めるときはそこを測ってからにする。
 
-Claude Code のバージョンが上がるとハーネス側の下駄が動く（bench 当時 32k → 実測 39k）。数字を引くときは測り直す。
+Claude Code のバージョンが上がるとハーネス側の固定分（毎ターン必ず送られる分）が動く（bench 当時 32k → 実測 39k）。数字を引くときは測り直す。
 
 根拠: `docs/sources/token-reduction-tools.md` #1〜#13・`docs/sources/token-saving.md` #15〜#16
