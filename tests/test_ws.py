@@ -953,5 +953,42 @@ class WsFlowTest(unittest.TestCase):
         self.assertFalse((self.root / ".ws/current").exists())
 
 
+    def test_hook_treats_powershell_like_bash(self):
+        """Windows の PowerShell ツール。横断検索と Web 取得は Bash と同じ理由文で拒否し、自タスク内とローカルは通す。"""
+        task = self._task()
+        rel = task.relative_to(self.root).as_posix()
+        for cmd in ("Get-ChildItem projects -Recurse", "gci -Recurse", "dir projects/acme/tasks",
+                    "Select-String -Path projects/acme -Pattern 単価", "ls projects"):
+            r = self.ws("hook", "pre-tool-use", stdin=json.dumps({"tool_name": "PowerShell", "tool_input": {"command": cmd}}))
+            self.assertIn("横断して一覧・検索しない", r.stdout, cmd)
+        for cmd in ("Invoke-WebRequest https://example.com/x", "iwr -Uri https://example.com/x", "curl https://example.com/x"):
+            r = self.ws("hook", "pre-tool-use", stdin=json.dumps({"tool_name": "PowerShell", "tool_input": {"command": cmd}}))
+            self.assertIn('"deny"', r.stdout, cmd)
+            self.assertIn("ref add", r.stdout, cmd)  # curl/wget と同じ誘導
+        self.assertEqual(self.hook("PowerShell", {"command": "Get-Content projects/acme/tasks/20200101_other/index.md"}), "deny")
+        self.assertIsNone(self.hook("PowerShell", {"command": f"Get-Content {rel}/index.md"}))
+        self.assertIsNone(self.hook("PowerShell", {"command": "iwr http://127.0.0.1:8000/x"}))
+        self.assertIsNone(self.hook("PowerShell", {"command": "python scripts/ws task current"}))
+        # Bash 側の検知語は増えていない（Linux の挙動を変えない）
+        self.assertIsNone(self.hook("Bash", {"command": "Invoke-WebRequest https://example.com/x"}))
+        self.assertIsNone(self.hook("Bash", {"command": "gci -Recurse"}))
+        self.ws("task", "done")
+        self.assertIsNone(self.hook("PowerShell", {"command": "Get-ChildItem projects -Recurse"}))
+
+    def test_posix_input_normalizes_windows_paths_without_breaking_json_escapes(self):
+        """Windows のツール入力（バックスラッシュ区切り）を / に揃える。文字列中の \" と改行のエスケープは壊さない。"""
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader("ws_mod", str(WS))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("ws_mod", loader))
+        loader.exec_module(mod)
+        raw = {"file_path": "C:\\w\\projects\\acme\\tasks\\20200101_other\\index.md", "command": 'echo "a\\b"\nls'}
+        self.assertEqual(mod.TASK_RE.findall(json.dumps(raw)), [])  # 揃えないと他タスクの拒否が素通りする
+        out = mod._posix_input(raw)
+        self.assertEqual(out["file_path"], "C:/w/projects/acme/tasks/20200101_other/index.md")
+        self.assertEqual(out["command"], 'echo "a/b"\nls')
+        self.assertEqual(mod.TASK_RE.findall(json.dumps(out)), [("acme", "20200101_other")])
+
+
 if __name__ == "__main__":
     unittest.main()

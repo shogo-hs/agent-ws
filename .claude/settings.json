@@ -5,7 +5,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" statusline"
+    "command": "python \"$CLAUDE_PROJECT_DIR/scripts/ws\" statusline"
   },
   "hooks": {
     "SessionStart": [
@@ -13,7 +13,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook session-start",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/ws", "hook", "session-start"],
             "timeout": 10,
             "statusMessage": "agent-ws: 現在のタスクを確認中..."
           }
@@ -25,7 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook user-prompt-submit",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/ws", "hook", "user-prompt-submit"],
             "timeout": 10
           }
         ]
@@ -33,11 +35,12 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Read|Glob|Grep|Edit|Write|MultiEdit|NotebookEdit|Bash|WebFetch",
+        "matcher": "Read|Glob|Grep|Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook pre-tool-use",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/ws", "hook", "pre-tool-use"],
             "timeout": 10
           }
         ]
@@ -49,7 +52,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook post-tool-use",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/ws", "hook", "post-tool-use"],
             "timeout": 10
           }
         ]
@@ -60,7 +64,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ws\" hook stop",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/ws", "hook", "stop"],
             "timeout": 10
           }
         ]

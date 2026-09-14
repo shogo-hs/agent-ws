@@ -1,16 +1,16 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook session-start", "timeout": 10, "statusMessage": "agent-ws: loading current task", "additionalContextLimit": 8000 } ] }
+      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook session-start", "commandWindows": "python scripts/ws hook session-start", "timeout": 10, "statusMessage": "agent-ws: loading current task", "additionalContextLimit": 8000 } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook user-prompt-submit --ttl 30", "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook user-prompt-submit --ttl 30", "commandWindows": "python scripts/ws hook user-prompt-submit --ttl 30", "timeout": 10 } ] }
     ],
     "PreToolUse": [
-      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook pre-tool-use", "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook pre-tool-use", "commandWindows": "python scripts/ws hook pre-tool-use", "timeout": 10 } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook stop", "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "python3 scripts/ws hook stop", "commandWindows": "python scripts/ws hook stop", "timeout": 10 } ] }
     ]
   }
 }
