@@ -393,14 +393,17 @@ def cmd_build(args):
 # ---- 1 セッション走らせて数える ----------------------------------------------------------
 
 def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: bool = False,
-               advisor: str | None = None) -> tuple[dict, str, float, int]:
+               advisor: str | None = None, effort: str | None = None, extra_env: dict | None = None) -> tuple[dict, str, float, int]:
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env.update(extra_env or {})  # --env MAX_THINKING_TOKENS=0 のように、Claude Code の環境変数で切る条件を測る
     allowed = ALLOWED_TOOLS + (",Agent" if delegate else "")
     cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json",
            "--setting-sources", "project", "--strict-mcp-config", "--max-turns", str(max_turns),
            "--allowedTools", allowed]
     if advisor:
         cmd += ["--advisor", advisor]  # Claude Code の Advisor（相談役モデル）を付ける。効いたかは transcript の advisor_calls で数える
+    if effort:
+        cmd += ["--effort", effort]  # 推論の深さ（low / medium / high）。出力（thinking）の量と正誤の交換を測る
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=rundir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, timeout=1800)
@@ -595,9 +598,10 @@ def doc_location(changed: list[str], cond: str) -> str:
 
 def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, i: int,
                 rundir: Path, prompt: str, baseline: set[str], max_turns: int, chain_id: str | None,
-                delegate: bool = False, advisor: str | None = None) -> dict:
+                delegate: bool = False, advisor: str | None = None, effort: str | None = None,
+                extra_env: dict | None = None) -> dict:
     before = snapshot(rundir)
-    res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate, advisor)
+    res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate, advisor, effort, extra_env)
     after = snapshot(rundir)
     changed = sorted(p for p, h in after.items() if before.get(p) != h)
     changed_text = changed_text_of(rundir, changed)
@@ -607,7 +611,8 @@ def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, 
     met = analyze(tpath, rundir, other_task_pred(cond, exp, stage, baseline)) if tpath else {}
     text_all = final + "\n" + changed_text
     rec = dict(ts=datetime.now().isoformat(timespec="seconds"), exp=exp, stage=stage, chain_id=chain_id,
-               scale=scale, cond=cond, model=model, delegate=delegate, advisor=advisor, i=i, rundir=str(rundir), session_id=sid,
+               scale=scale, cond=cond, model=model, delegate=delegate, advisor=advisor, effort=effort, env=extra_env or {},
+               i=i, rundir=str(rundir), session_id=sid,
                model_usage={k: v.get("costUSD") for k, v in (res.get("modelUsage") or {}).items()},
                elapsed=round(elapsed, 1), returncode=rc, num_turns=res.get("num_turns"),
                cost_usd=res.get("total_cost_usd"), is_error=res.get("is_error"),
@@ -648,8 +653,9 @@ def strip_advisor_env(rundir: Path):
 
 
 def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, results: Path, max_turns: int,
-           delegate: bool = False, advisor: str | None = None) -> list[dict]:
-    suffix = ("d" if delegate else "") + ("v" if advisor else "")  # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない
+           delegate: bool = False, advisor: str | None = None, effort: str | None = None,
+           extra_env: dict | None = None) -> list[dict]:
+    suffix = ("d" if delegate else "") + ("v" if advisor else "") + (f"e{effort[0]}" if effort else "") + ("x" if extra_env else "")  # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない
     rundir = RUNS_DIR / tag / f"{exp}_{scale}_{model}_{cond}{i}{suffix}"
     state = "fresh" if exp == "chain" else "doing"
     build(cond, scale, state, rundir)
@@ -659,14 +665,14 @@ def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, resul
     recs = []
     if exp == "chain":
         cid = f"{tag}_{scale}_{model}_{cond}{i}{suffix}"
-        r1 = run_session(exp, 1, scale, cond, model, i, rundir, PROMPTS["chain1"], baseline, max_turns, cid, delegate, advisor)
+        r1 = run_session(exp, 1, scale, cond, model, i, rundir, PROMPTS["chain1"], baseline, max_turns, cid, delegate, advisor, effort, extra_env)
         append_result(r1, results)
-        r2 = run_session(exp, 2, scale, cond, model, i, rundir, PROMPTS["chain2"], baseline, max_turns, cid, delegate, advisor)
+        r2 = run_session(exp, 2, scale, cond, model, i, rundir, PROMPTS["chain2"], baseline, max_turns, cid, delegate, advisor, effort, extra_env)
         append_result(r2, results)
         recs = [r1, r2]
     else:
         r = run_session(exp, None, scale, cond, model, i, rundir, PROMPTS[exp], baseline,
-                        1 if exp == "base" else max_turns, None, delegate, advisor)
+                        1 if exp == "base" else max_turns, None, delegate, advisor, effort, extra_env)
         append_result(r, results)
         recs = [r]
     for r in recs:
@@ -682,15 +688,16 @@ def cmd_run(args):
     results = Path(args.results).resolve() if args.results else RESULTS / "runs.jsonl"
     conds = args.conds.split(",")
     jobs = [(cond, i) for i in range(args.n) for cond in conds]  # A0 B0 C0 A1 ... と交互に
+    extra_env = dict(kv.split("=", 1) for kv in (args.env or []))
     print(f"tag={tag} exp={args.exp} scale={args.scale} model={args.model} jobs={len(jobs)} -> {results}", flush=True)
     if args.jobs > 1:
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor) for c, i in jobs]
+            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env) for c, i in jobs]
             for f in futs:
                 f.result()
     else:
         for c, i in jobs:
-            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor)
+            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env)
 
 
 def cmd_rescore(args):
@@ -955,6 +962,8 @@ def main(argv=None):
     p.add_argument("--delegate", action="store_true",
                    help="本線が researcher（haiku）に委譲できる条件。--allowedTools に Agent を足す")
     p.add_argument("--advisor", help="Claude Code の --advisor に渡す相談役モデル（opus 等）。付けた条件は rundir に v が付く")
+    p.add_argument("--effort", choices=["low", "medium", "high"], help="Claude Code の --effort。付けた条件は rundir に e<頭文字> が付く")
+    p.add_argument("--env", action="append", metavar="KEY=VAL", help="Claude Code に渡す環境変数（例: MAX_THINKING_TOKENS=0）。付けた条件は rundir に x が付く")
     p.add_argument("--tag")
     p.add_argument("--results")
     p.set_defaults(fn=cmd_run)

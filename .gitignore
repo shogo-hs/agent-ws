@@ -4,3 +4,5 @@
 tmp/
 __pycache__/
 bench/results/report_fragment.html
+# 固定分の計測用に組んだ A 条件（bench/run_fixed.py）
+bench/fixed/

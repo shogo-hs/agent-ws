@@ -26,6 +26,7 @@
 | [0019](0019-windows-without-changing-linux.md) | Windows から同じ hooks と CLI で使えるようにする。Linux 側の挙動は変えない | 採用 | Claude Code は exec 形式で `python` を直接起動、Codex は `commandWindows`。`\` → `/` の正規化・UTF-8 化・PowerShell の検知は `os.name == "nt"` / `tool == "PowerShell"` の下だけ。手打ち表記は置換しない |
 
 | [0020](0020-codex-researcher-luna-max-read-to-end.md) | Codex の調査係は gpt-5.6-luna・max にし、researcher に「末尾まで読み切る」規則を足す | 採用 | gpt-5.4-mini は 2026-08-31 に Codex（ChatGPT ログイン）から退役。low は読み切らずに書き始め、規則を足しても 8 回中 2 回は決定の 4 割を落とす。max は 7 回とも落とさず、代償は時間 2.4 倍と luna 単価のトークン 3 倍 |
+| [0021](0021-deny-unused-eager-tools-and-effort-knob.md) | 使わない常時ロードのツール定義は `permissions.deny` で外す。effort と thinking は既定を変えず調整ノブにする | 採用 | 固定分 35,105 のうち 4,884 が案件の仕事で呼ばれないツールの定義。bench trap で処理入力 −28%・費用 −14%。effort medium は費用 −14% で 5/5 正解だが、正誤が保てると言えるのが trap だけなので既定にしない |
 
 ## 書き方
 
