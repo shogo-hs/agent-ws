@@ -1139,6 +1139,16 @@ class OntoIntegrationTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.hook("Bash", {"command": cmd}))
 
+    def test_hook_denies_codex_apply_patch_on_the_definition(self):
+        """Codex CLI のファイル編集は tool_name が apply_patch で、対象はパッチ本文の「*** Update File:」の行に入る（0.153.4 の実機で記録した形）。"""
+        patch = ("*** Begin Patch\n*** Update File: {root}/knowledges/ontology/ontology.json\n@@\n"
+                 '-  "version": 1,\n+  "version": 1 ,\n*** End Patch').format(root=self.root)
+        self.assertEqual(self.hook("apply_patch", {"command": patch}), "deny")
+        add = "*** Begin Patch\n*** Add File: projects/acme/knowledges/ontology/extra.json\n+{}\n*** End Patch"
+        self.assertEqual(self.hook("apply_patch", {"command": add}), "deny")
+        elsewhere = "*** Begin Patch\n*** Update File: projects/acme/index.md\n@@\n-a\n+b\n*** End Patch"
+        self.assertIsNone(self.hook("apply_patch", {"command": elsewhere}))
+
 
 if __name__ == "__main__":
     unittest.main()

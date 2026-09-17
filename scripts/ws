@@ -826,6 +826,10 @@ def _onto_guard(tool: str, tool_input: dict, blob: str) -> str | None:
         target = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "").replace("\\", "/")
         if "knowledges/ontology/" in target:
             return _ONTO_DEFINE_MSG
+    if tool == "apply_patch":
+        # Codex CLI のファイル編集。tool_input.command がパッチの本文で、対象は「*** Update File: <path>」の行に入る（0.153.4 で実測）
+        if re.search(r"^\*\*\* (?:Add|Update|Delete) File: .*knowledges/ontology/|^\*\*\* Move to: .*knowledges/ontology/", cmd, re.M):
+            return _ONTO_DEFINE_MSG
     # scripts/ws onto … は knowledges/ontology/ のパスを引数に取らない（範囲は --common / --project で選ぶ）ので、
     # 「ws onto を含むコマンドは通す」という例外は置かない（ws onto types; sed -i … の相乗りを通さないため）
     if tool in ("Bash", "PowerShell", "shell") and "knowledges/ontology/" in cmd:

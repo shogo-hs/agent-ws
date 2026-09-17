@@ -167,7 +167,7 @@ Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` か�
 
 正規化版（`.normalized.md`）がある文字起こしの原文を Read や Grep しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed`/`grep` は書き換えずに deny し、正規化版のパスを示します）。
 
-`knowledges/ontology/` と `projects/*/knowledges/ontology/` の `objects.json`・`log.jsonl`・`proposals/`（実体・記録・実行待ち）は、現在のタスクの有無に関係なく直接の読み書きを拒否します（読むには `scripts/ws onto query / show / log / act` を使います）。`ontology.json`・`index.md`・`questions.json` を含む配下全体への Edit / Write / MultiEdit / NotebookEdit も拒否し（`define apply` に誘導）、`onto approve`/`reject`/`adopt` を含む Bash コマンドや、承認・却下の文面と `claude`/`codex` の起動を同時に含むコマンドも拒否します（承認は人だけ）。保守用の環境変数 `WS_ONTO_MAINT=1` を**hook のプロセス**に立てると実体・記録・実行待ちと定義の直接編集の拒否だけを止められますが、エージェントの Bash からはそのプロセスの環境を変えられません（承認の拒否は常に効きます）。
+`knowledges/ontology/` と `projects/*/knowledges/ontology/` の `objects.json`・`log.jsonl`・`proposals/`（実体・記録・実行待ち）は、現在のタスクの有無に関係なく直接の読み書きを拒否します（読むには `scripts/ws onto query / show / log / act` を使います）。`ontology.json`・`index.md`・`questions.json` を含む配下全体への Edit / Write / MultiEdit / NotebookEdit と、Codex CLI のファイル編集（`apply_patch`）も拒否し（`define apply` に誘導）、`onto approve`/`reject`/`adopt` を含む Bash コマンドや、承認・却下の文面と `claude`/`codex` の起動を同時に含むコマンドも拒否します（承認は人だけ）。保守用の環境変数 `WS_ONTO_MAINT=1` を**hook のプロセス**に立てると実体・記録・実行待ちと定義の直接編集の拒否だけを止められますが、エージェントの Bash からはそのプロセスの環境を変えられません（承認の拒否は常に効きます）。
 
 ### 1 時間以上空いたあとの 1 通目を止める
 
@@ -366,6 +366,7 @@ agent-ws は 1 セッション目が `scripts/ws` で残した index.md と refe
 - 「Sonnet でも安定する」は、この材料では「古い数字を掴む」形の誤答が 1 回も出なかったので示せていません。仕組みなしの失敗はすべて「聞き返して止まる」でした
 - 毎ターン固定で送られる分は agent-ws が Sonnet で 32.0k、仕組みなしが 29.2k（AGENTS.md・skills・注入の 2.9k）。Haiku 4.5 は 24.5k と 21.8k
 - Codex CLI・Opus・compact 後の再注入・用語集の正規化は測っていません
+- オントロジーの hook と CLI は、Claude Code に加えて Codex CLI 0.153.4 の実機でも確かめました（実体ファイルの直接の読み取り・定義の `apply_patch`・エージェントからの `approve` は拒否、照会と `act` は通り、人の発言「承認 <案件>/P-0001」で承認が実行されて結果が Codex の文脈に載る）。実機の Windows では確かめていません
 - オントロジーがエージェントの正確さとトークンに与える効果は未計測です。照会（`query`/`show`）と実行（`act`）はそれぞれ 1 ターンなので、1 タスクあたりのトークンは増える見込みで、減るとすれば防げた手戻りの分だけです
 
 `bench/` は agent-ws を使うだけなら不要です。`projects/_example/` と同じく消して構いません。
