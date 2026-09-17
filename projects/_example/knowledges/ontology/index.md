@@ -1,8 +1,10 @@
 ---
 title: "オントロジー"
 summary: "オントロジー: 型 9・つながり 8・できること 4（AddActionItem・CloseActionItem・IssueEstimate・RecordSizingDecision）。共通の型も使える。読むのは scripts/ws onto query / show、変えるのは scripts/ws onto act だけ"
-updated: "2026-09-17"
+updated: "2026-09-18"
 ---
+
+件数と中身は `scripts/ws onto types` / `query` で見る（このファイルは定義だけ）。
 
 共通（自社）の型も使える: ApprovalAuthority・Department・InternalSystem・Person。定義は共通の `knowledges/ontology/index.md`。
 
@@ -253,17 +255,4 @@ erDiagram
 - `supersedes is None or supersedes.status == 'active'` → 置き換える決定（{supersedes.title}）は既に置き換え済み。現行の決定は {supersedes.superseded_by.title}
 
 承認: 自動
-
-## 件数
-
-| 型 | 件数 |
-|---|---|
-| ActionItem | 1 |
-| CustomerSystem | 3 |
-| Decision | 1 |
-| Meeting | 1 |
-| PriceItem | 3 |
-| SizingDecision | 2 |
-| Stakeholder | 2 |
-| Workstream | 2 |
 

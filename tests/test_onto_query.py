@@ -155,6 +155,47 @@ class SelectTest(OntoCaseTest):
         self.assertEqual(rows[0]["email"], "sato@example.com")
 
 
+# --- agent_visible: false の非表示が where / リンク越しの select にも及ぶ（X-4） ---
+
+
+class HiddenPropertyQueryTest(OntoCaseTest):
+    def test_where_on_hidden_prop_agent_vs_human(self) -> None:
+        with self.assertRaises(ExprError):
+            query.query(self.project_store, "Person", "email == 'sato@example.com'", agent=True)
+        rows, total = query.query(
+            self.project_store, "Person", "email == 'sato@example.com'", agent=False
+        )
+        self.assertEqual(total, 1)
+
+    def test_select_link_prop_hides_subtype_only_hidden_prop_for_agent(self) -> None:
+        # Workstream.lead は宣言上 Person だが、実際の相手は Stakeholder（phone が非表示）。
+        rows_agent, _ = query.query(
+            self.project_store, "Workstream", where="id == 'ws-poc'", select=["lead.phone"], agent=True,
+        )
+        self.assertEqual(rows_agent[0]["lead.phone"], "（非表示）")
+        rows_human, _ = query.query(
+            self.project_store, "Workstream", where="id == 'ws-poc'", select=["lead.phone"], agent=False,
+        )
+        self.assertEqual(rows_human[0]["lead.phone"], "03-0000-0000")
+
+    def test_hide_hidden_flag_is_restored_after_query(self) -> None:
+        query.query(self.project_store, "Person", agent=True)
+        self.assertFalse(self.project_store.hide_hidden)
+        self.assertFalse(self.common_store.hide_hidden)
+
+
+# --- select に存在しない名前を渡すと OntoError（X-5） -------------------------
+
+
+class SelectUnknownNameTest(OntoCaseTest):
+    def test_unknown_select_name_raises_ontoerror_with_available_names(self) -> None:
+        with self.assertRaises(OntoError) as cm:
+            query.query(self.project_store, "Person", select=["nope"])
+        msg = str(cm.exception)
+        self.assertIn("nope", msg)
+        self.assertIn("使える名前", msg)
+
+
 # --- limit / 全件数 / id 順 --------------------------------------------------
 
 

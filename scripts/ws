@@ -749,17 +749,32 @@ def cmd_doctor(args):
 # 取り決め: scripts/wsonto/README.md の「scripts/ws への組み込み」。hook が毎ツール呼び出しで
 # 走る経路（_onto_guard）では import しない。承認の文面一致・doctor・normalize・statusline は、
 # オントロジーのディレクトリが実在するときだけ遅延 import する（無い利用者の起動コストを 0 にする）。
+# 直接読んでよいのは常に ontology.json・index.md・questions.json の 3 つだけ（許すものを列挙し、
+# それ以外を拒否する）。_onto_guard の戻り値は「拒否理由の文字列」「Grep への glob 読み替え(dict、
+# permissionDecision=allow の updatedInput)」「None（この橋渡しは何も言わない）」のどれか。
 
 _ONTO_PROMPT_RE = re.compile(r"^\s*(承認|却下|approve|reject)\s+((?:[\w-]+/)?[PS]-\d{4})(?:\s+(.+))?$")
-_ONTO_STATE_RE = re.compile(r"knowledges/ontology/(?:objects\.json|log\.jsonl|proposals(?:/|\b)|\.lock(?:/|\b))")
 _ONTO_HUMAN_ONLY_RE = re.compile(r"\bonto\s+(?:approve|reject|adopt)\b")
 _ONTO_AGENT_PROMPT_RE = re.compile(r"\b(?:claude|codex)\b.*(?:承認|却下|approve|reject)\s+\S*[PS]-\d{4}", re.S)
 _ONTO_READONLY_VERBS = {"cat", "head", "tail", "less", "wc", "ls", "grep", "rg", "jq", "cd", "echo", "sort", "uniq", "cut"}
 _ONTO_READONLY_PAIRS = {("git", "diff"), ("git", "log"), ("git", "status")}
 _ONTO_STATE_MSG = ("[agent-ws] knowledges/ontology/ の実体・記録・実行待ちは直接読み書きしない。"
                     "読むのは scripts/ws onto query / show / log、変えるのは scripts/ws onto act。")
+_ONTO_ALLOWED_READ_NAMES = {"ontology.json", "index.md", "questions.json"}
+_ONTO_READ_MSG = ("[agent-ws] knowledges/ontology/ の中で直接読めるのは "
+                   "ontology.json・index.md・questions.json だけ。パスをファイルまで書く。"
+                   "中身は scripts/ws onto types / query / show。")
 _ONTO_DIR_RE = re.compile(r"knowledges/ontology(?![\w-])")  # 末尾の / が無い形（cd knowledges/ontology）も拾う
+# 「オントロジーへの言及」: knowledges/ontology（後ろが / か語の切れ目）、または knowledges/ を伴わない
+# ontology/<名前>（cd .../knowledges && cat ontology/objects.json の形。語頭・空白・引用符・=・/ の直後）
+_ONTO_MENTION_RE = re.compile(_ONTO_DIR_RE.pattern + r"|(?:^|[\s'\"=/])ontology/(?=\S)")
 _ONTO_STATE_NAME_RE = re.compile(r"(?<![\w.-])(?:objects\.json|log\.jsonl|proposals|\.lock)(?![\w-])")
+_ONTO_STATE_TOKEN_RE = re.compile(r"(?<![\w.-])(?:objects\.json|log\.jsonl)(?![\w-])")
+_ONTO_GLOB_CHAR_RE = re.compile(r"[*?\[]")
+_ONTO_RECURSIVE_RE = re.compile(r"(?<![\w-])(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive|find|tree|rg)(?![\w-])")
+_ONTO_KNOWLEDGES_TAIL_RE = re.compile(r"(?:^|/)knowledges/?$")
+_ONTO_KNOWLEDGES_SCAN_MSG = ("[agent-ws] knowledges/ を再帰で舐めない。index.md から必要なファイルを開く。"
+                              "オントロジーは scripts/ws onto query。")
 _ONTO_CD_RE = re.compile(r"(?:^|[;&|\n])\s*(?:cd|pushd)\s+\S*knowledges/ontology(?![\w-])")
 _ONTO_INSIDE_MSG = ("[agent-ws] knowledges/ontology/ の中を作業ディレクトリにしない（相対パスで実体に触れてしまう）。"
                     "cd でリポジトリのルートに戻ってから、scripts/ws onto query / show / act を使う。")
@@ -767,6 +782,12 @@ _ONTO_DEFINE_MSG = ("[agent-ws] knowledges/ontology/ の定義は直接編集し
                      "scripts/ws onto define apply <patch.json> で変える。")
 _ONTO_APPROVE_MSG = ("[agent-ws] 承認・却下・取り込みは人だけができる（エージェントの Bash からは実行できない）。"
                       "人に「承認 P-0001」のように送ってもらう。")
+_ONTO_SESSION_STRIP_MSG = _ONTO_APPROVE_MSG + "セッションの環境変数を外したり疑似端末で包んだりして onto を呼ばない。"
+_ONTO_SESSION_STRIP_RE = re.compile(
+    r"\benv\b[^;&|\n]*-u\s+(?:CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID)\b"
+    r"|\bunset\b[^;&|\n]*\b(?:CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID)\b"
+    r"|\b(?:CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID)=(?=\s|$)"
+    r"|\bscript\b")
 
 
 def _load_onto_cli():
@@ -792,13 +813,29 @@ def _onto_ctx(sid: str | None = None):
     )
 
 
+def _slashify(value) -> str:
+    return str(value or "").replace("\\", "/")
+
+
+def _onto_ends_allowed(path: str) -> bool:
+    """末尾（ファイル名）が ontology.json・index.md・questions.json のどれかか。"""
+    return path.rstrip("/").rsplit("/", 1)[-1] in _ONTO_ALLOWED_READ_NAMES
+
+
+def _onto_resolve(path: str, cwd: str) -> Path:
+    p = Path(path)
+    return p if p.is_absolute() else Path(cwd or ROOT) / p
+
+
 def _onto_cmd_readonly(cmd: str) -> bool:
-    """(d) knowledges/ontology/ に触れる Bash/PowerShell/shell のコマンドのうち、読むだけの語で
-    始まり、書き換え・リダイレクトの気配（> tee -i）が無いものだけ通す。"""
-    if re.search(r"(>|\btee\b|\s-i\b|`|\$\()", cmd):
+    """(i) knowledges/ontology/ に触れる Bash/PowerShell/shell のコマンドのうち、; && || | 改行 で
+    つないだ各区切りが読むだけの語で始まり、書き換え・リダイレクトの気配（> tee `` $()）が無いものだけ
+    通す。2>/dev/null 等の null へのリダイレクトは書き換えではないので先に取り除いてから見る
+    （-i の検査は外した。sed はそもそも許可リストに無いので不要）。"""
+    stripped = re.sub(r"(?:&>/dev/null|2>/dev/null|2>&1|>/dev/null)", "", cmd)
+    if re.search(r"(>|\btee\b|`|\$\()", stripped):
         return False
-    # ; && || | 改行 でつないだ各区切りが、どれも読むだけの語で始まること（cat x; sed -i … や cat x | python … を通さない）
-    segments = [seg.strip() for seg in re.split(r";|&&|\|\||\||\n", cmd) if seg.strip()]
+    segments = [seg.strip() for seg in re.split(r";|&&|\|\||\||\n", stripped) if seg.strip()]
     if not segments:
         return False
     for seg in segments:
@@ -811,18 +848,83 @@ def _onto_cmd_readonly(cmd: str) -> bool:
     return True
 
 
-def _onto_guard(tool: str, tool_input: dict, blob: str, cwd: str = "") -> str | None:
+def _onto_shell_tokens_ok(cmd: str) -> bool:
+    """(ii) オントロジーに言及している各トークン（空白区切り。引用符は外して見る）が glob の文字
+    （* ? [）を含まず、末尾が読める3ファイルのどれかであること。"""
+    for tok in cmd.split():
+        bare = re.sub(r"[\"'`]", "", tok)
+        if not _ONTO_MENTION_RE.search(bare):
+            continue
+        if _ONTO_GLOB_CHAR_RE.search(bare) or not _onto_ends_allowed(bare):
+            return False
+    return True
+
+
+def _onto_shell_mention_ok(cmd: str) -> bool:
+    """(i)(ii)(iii) を全部満たすときだけ True。(iii) は -r -R --recursive と find tree rg を含まないこと。"""
+    return (_onto_cmd_readonly(cmd) and _onto_shell_tokens_ok(cmd)
+            and not _ONTO_RECURSIVE_RE.search(cmd))
+
+
+def _onto_knowledges_scan_reason(cmd: str, cwd: str) -> str | None:
+    """grep -r / rg / find で knowledges/ そのものを再帰的に走査する形は、その下に ontology/ が
+    実在するなら拒否する（コマンドに「ontology」という語が出てこなくても実体に当たりうるため）。"""
+    if not _ONTO_RECURSIVE_RE.search(cmd):
+        return None
+    for tok in cmd.split():
+        bare = re.sub(r"[\"'`]", "", tok)
+        if _ONTO_KNOWLEDGES_TAIL_RE.search(bare) and (_onto_resolve(bare, cwd) / "ontology").is_dir():
+            return _ONTO_KNOWLEDGES_SCAN_MSG
+    return None
+
+
+def _onto_guard_read(tool_input: dict) -> str | None:
+    path = _slashify(tool_input.get("file_path"))
+    if not _ONTO_MENTION_RE.search(path) or _onto_ends_allowed(path):
+        return None
+    return _ONTO_STATE_MSG if _ONTO_STATE_NAME_RE.search(path) else _ONTO_READ_MSG
+
+
+def _onto_guard_grep(tool_input: dict, cwd: str) -> str | dict | None:
+    path = _slashify(tool_input.get("path") or ".")
+    if _ONTO_MENTION_RE.search(path):
+        if _onto_ends_allowed(path):
+            return None
+        return _ONTO_STATE_MSG if _ONTO_STATE_NAME_RE.search(path) else _ONTO_READ_MSG
+    # path がオントロジーを含む親（…/knowledges）で、その下に ontology/ が実在するときだけ、
+    # glob を .md に絞って通す（ナレッジは .md だけなので意味は変わらない）
+    if _ONTO_KNOWLEDGES_TAIL_RE.search(path) and (_onto_resolve(path, cwd) / "ontology").is_dir():
+        glob = tool_input.get("glob")
+        if not glob:
+            return {**tool_input, "glob": "*.md"}
+        if not str(glob).endswith(".md"):
+            return _ONTO_READ_MSG
+    return None
+
+
+def _onto_guard_glob(tool_input: dict) -> str | None:
+    pattern = _slashify(tool_input.get("pattern"))
+    path = _slashify(tool_input.get("path"))
+    if not (_ONTO_MENTION_RE.search(pattern) or _ONTO_MENTION_RE.search(path)):
+        return None
+    if pattern.endswith(".md"):
+        return None
+    return _ONTO_STATE_MSG if _ONTO_STATE_NAME_RE.search(pattern) else _ONTO_READ_MSG
+
+
+def _onto_guard(tool: str, tool_input: dict, cwd: str = "") -> str | dict | None:
     """PreToolUse: knowledges/ontology/ の実体・記録・実行待ち・定義をエージェントに直接読み書き
-    させない。承認・却下・取り込みは人だけ。拒否の理由を返す（無ければ None）。現在のタスクの
-    有無に関係なく効く。blob・command はどちらも Windows のバックスラッシュを / に揃えてから見る
-    （JSON 化した blob は \\\\ の対で入っているので二重に置換する）。"""
+    させない。直接読んでよいのは常に ontology.json・index.md・questions.json の3つだけ。承認・却下・
+    取り込みは人だけ。戻り値は拒否理由の文字列／Grep の glob 読み替え(dict、allow)／None のどれか。
+    現在のタスクの有無に関係なく効く。command は Windows のバックスラッシュを / に揃えてから見る。"""
     maint = os.environ.get("WS_ONTO_MAINT") == "1"
-    blob = blob.replace("\\\\", "/")
     cmd = str(tool_input.get("command", "")).replace("\\", "/")
     if tool in ("Bash", "PowerShell", "shell"):
         bare = re.sub(r"[\"'`]", "", cmd)  # onto "approve" のように引用符で割っても同じ扱いにする
         if _ONTO_HUMAN_ONLY_RE.search(bare) or _ONTO_AGENT_PROMPT_RE.search(bare):
             return _ONTO_APPROVE_MSG  # 承認・却下・取り込みは人だけ（保守用の WS_ONTO_MAINT でも止めない）
+        if re.search(r"\bonto\b", bare) and _ONTO_SESSION_STRIP_RE.search(bare):
+            return _ONTO_SESSION_STRIP_MSG  # 環境変数を外す・疑似端末で包む迂回も人だけ（WS_ONTO_MAINT でも止めない）
     if maint:
         return None
     # 作業ディレクトリがオントロジーの中だと、パスを書かずに objects.json や Grep で実体に触れられる。
@@ -830,25 +932,30 @@ def _onto_guard(tool: str, tool_input: dict, blob: str, cwd: str = "") -> str | 
     if re.search(r"/knowledges/ontology(?:/|$)", str(cwd).replace("\\", "/")):
         if not (tool in ("Bash", "PowerShell", "shell") and re.fullmatch(r"\s*(?:cd|popd)(?:\s+\S+)?\s*", cmd)):
             return _ONTO_INSIDE_MSG
-    if _ONTO_STATE_RE.search(blob):
-        return _ONTO_STATE_MSG
+    if tool == "Read":
+        return _onto_guard_read(tool_input)
+    if tool == "Grep":
+        return _onto_guard_grep(tool_input, cwd)
+    if tool == "Glob":
+        return _onto_guard_glob(tool_input)
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         target = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "").replace("\\", "/")
-        if "knowledges/ontology/" in target:
-            return _ONTO_DEFINE_MSG
+        return _ONTO_DEFINE_MSG if "knowledges/ontology/" in target else None
     if tool == "apply_patch":
         # Codex CLI のファイル編集。tool_input.command がパッチの本文で、対象は「*** Update File: <path>」の行に入る（0.153.4 で実測）
         if re.search(r"^\*\*\* (?:Add|Update|Delete) File: .*knowledges/ontology/|^\*\*\* Move to: .*knowledges/ontology/", cmd, re.M):
             return _ONTO_DEFINE_MSG
-    # scripts/ws onto … は knowledges/ontology/ のパスを引数に取らない（範囲は --common / --project で選ぶ）ので、
-    # 「ws onto を含むコマンドは通す」という例外は置かない（ws onto types; sed -i … の相乗りを通さないため）
-    if tool in ("Bash", "PowerShell", "shell") and _ONTO_DIR_RE.search(cmd):
+        return None
+    if tool in ("Bash", "PowerShell", "shell"):
+        # scripts/ws onto … は knowledges/ontology/ のパスを引数に取らない（範囲は --common / --project
+        # で選ぶ）ので、「ws onto を含むコマンドは通す」という例外は置かない（相乗りを通さないため）
         if _ONTO_CD_RE.search(cmd):
             return _ONTO_INSIDE_MSG  # cd knowledges/ontology && cat objects.json の形。パスを付けて読めば足りる
-        if _ONTO_STATE_NAME_RE.search(cmd):
-            return _ONTO_STATE_MSG
-        if not _onto_cmd_readonly(cmd):
-            return _ONTO_DEFINE_MSG
+        if _ONTO_STATE_TOKEN_RE.search(cmd) and "tests/fixtures" not in cmd:
+            return _ONTO_STATE_MSG  # ディレクトリ名が無くても objects.json / log.jsonl が語として出たら拒否
+        if _ONTO_MENTION_RE.search(cmd) and not _onto_shell_mention_ok(cmd):
+            return _ONTO_STATE_MSG if _ONTO_STATE_NAME_RE.search(cmd) else _ONTO_READ_MSG
+        return _onto_knowledges_scan_reason(cmd, cwd)
     return None
 
 
@@ -1085,9 +1192,16 @@ def cmd_hook_pre_tool_use(args):
     if os.name == "nt":
         tool_input = _posix_input(tool_input)
     blob = json.dumps(tool_input, ensure_ascii=False)
-    onto_reason = _onto_guard(tool, tool_input, blob, data.get("cwd") or "")
-    if onto_reason:
-        _deny(onto_reason)
+    onto_result = _onto_guard(tool, tool_input, data.get("cwd") or "")
+    if isinstance(onto_result, dict):
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": onto_result,
+        }}, ensure_ascii=False))
+        return
+    if onto_result:
+        _deny(onto_result)
         return
     if tool in ("Bash", "PowerShell", "shell") and "scripts/ws" in blob:
         m = sid and re.search(r"\btask\s+(use|new|done)\b", blob)

@@ -167,7 +167,7 @@ Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` か�
 
 正規化版（`.normalized.md`）がある文字起こしの原文を Read や Grep しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed`/`grep` は書き換えずに deny し、正規化版のパスを示します）。
 
-`knowledges/ontology/` と `projects/*/knowledges/ontology/` の `objects.json`・`log.jsonl`・`proposals/`（実体・記録・実行待ち）は、現在のタスクの有無に関係なく直接の読み書きを拒否します（読むには `scripts/ws onto query / show / log / act` を使います）。`ontology.json`・`index.md`・`questions.json` を含む配下全体への Edit / Write / MultiEdit / NotebookEdit と、Codex CLI のファイル編集（`apply_patch`）も拒否し（`define apply` に誘導）、`onto approve`/`reject`/`adopt` を含む Bash コマンドや、承認・却下の文面と `claude`/`codex` の起動を同時に含むコマンドも拒否します（承認は人だけ）。保守用の環境変数 `WS_ONTO_MAINT=1` を**hook のプロセス**に立てると実体・記録・実行待ちと定義の直接編集の拒否だけを止められますが、エージェントの Bash からはそのプロセスの環境を変えられません（承認の拒否は常に効きます）。
+オントロジーのディレクトリ（`knowledges/ontology/` と `projects/*/knowledges/ontology/`）でエージェントが直接読めるのは、`ontology.json`・`index.md`・`questions.json` の 3 つだけです（現在のタスクの有無に関係なく）。実体・記録・実行待ち（`objects.json`・`log.jsonl`・`proposals/`）は読みも書きも拒否し、`scripts/ws onto query / show / log / act` に誘導します。ディレクトリ指定・glob・`cd` してからの相対パス・`knowledges/` の再帰の走査（`grep -r`・`rg`・`find`）も拒否します（Grep ツールで `knowledges/` を検索するときは、glob が未指定なら `*.md` を足して通します）。配下への Edit / Write / MultiEdit / NotebookEdit と、Codex CLI のファイル編集（`apply_patch`）も拒否します（`define apply` に誘導）。`onto approve` / `reject` / `adopt` を含むコマンド、セッションの環境変数を外したり疑似端末（`script`）で包んだりして `onto` を呼ぶコマンド、承認・却下の文面つきの `claude` / `codex` の起動も拒否します（承認は人だけ）。agent-ws 自体を直すときは、hook のプロセスの環境変数 `WS_ONTO_MAINT=1` で、承認まわり以外の拒否を外せます（エージェントの Bash からは hook のプロセスの環境を変えられません）。hook が止めるのは「うっかり触る」エージェントです。変数にパスを入れる・`python -c` で読む、のような回り道までは止めません。書き換えは、記録にある実体のハッシュとの不一致として `doctor` が後から見つけます。
 
 ### 1 時間以上空いたあとの 1 通目を止める
 
@@ -205,7 +205,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 
 | 種類 | 中身 |
 |---|---|
-| 型とプロパティ | `object_types`。名前・別名・説明・プロパティ（文字列・数値・日付・enum など。必須・一意・既定値・エージェントに見せるか） |
+| 型とプロパティ | `object_types`。名前・別名・説明・プロパティ（文字列・数値・日付・enum など。必須・一意・既定値・エージェントに見せるか＝`agent_visible`。照会の出力と絞り込みから外すための設定で、秘密を守る境界ではありません。見せたくない値はオントロジーに入れないでください） |
 | つながり | `link_types`。from → to の件数の下限・上限と、逆向きの名前（例: `owner` の逆は `action_items`） |
 | 型の継承 | `extends`。「すべての A は B か」と言えるときだけ使う（例: 案件の `Stakeholder` は共通の `Person` を extends。共通の型を案件で拡張できる。逆はできない） |
 | できること（アクション） | `action_types`。引数・前提条件（`criteria`）・適用するルール・承認の要否（`approval`） |
@@ -224,7 +224,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 
 **承認のしかた**
 
-決裁の要るアクションと定義の変更は、実行待ち（`proposals/P-0001.json` か `S-0001.json`）に積まれます。承認できるのは人だけです。チャットで「承認 P-0001」と送るか、端末で `scripts/ws onto approve P-0001` を実行します。積んだ時点の前提ではなく、承認したときの今の状態で検査をやり直してから反映します。エージェントが承認・却下を実行しようとすると hook が拒否します。
+決裁の要るアクションと定義の変更は、実行待ち（`proposals/P-0001.json` か `S-0001.json`）に積まれます。承認できるのは人だけです。人が自分で `act` や `define apply` を叩いた場合も、承認が要るものは同じように実行待ちになります（「人が実行したものは承認を省く」作りにすると、エージェントが人に化けたときに素通りするため）。チャットで「承認 P-0001」と送るか、端末で `scripts/ws onto approve P-0001` を実行します。積んだ時点の前提ではなく、承認したときの今の状態で検査をやり直してから反映します。エージェントが承認・却下を実行しようとすると hook が拒否します。
 
 **定義の変え方**
 

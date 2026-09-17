@@ -60,7 +60,7 @@ def propose(store: Store, patch: dict, actor: Actor, *, why: str = "") -> GovRes
         if violations:
             return GovResult("rejected", [v.message for v in violations], findings, None, None)
 
-        if _needs_approval(patch, candidate, actor):
+        if _needs_approval(patch, candidate):
             proposal_id = _next_schema_proposal_id(dir)
             _write_schema_proposal(dir, proposal_id, patch=patch, actor=actor, why=why, findings=findings)
             return GovResult("staged", [], findings, proposal_id, None)
@@ -72,9 +72,9 @@ def propose(store: Store, patch: dict, actor: Actor, *, why: str = "") -> GovRes
         return GovResult("committed", [], findings, None, version)
 
 
-def _needs_approval(patch: dict, candidate: Schema, actor: Actor) -> bool:
-    if actor.kind == "human":
-        return False
+def _needs_approval(patch: dict, candidate: Schema) -> bool:
+    # 「実行者が人なら承認を省く」はやらない（疑似端末や session 変数の偽装で素通りするため）。
+    # 誰が叩いたかに関係なく governance だけで決める。反映は auto のときか、approve_schema を通ったときだけ。
     if "governance" in patch:
         return True
     return candidate.governance.get("schema_changes", "stage") != "auto"
@@ -156,8 +156,7 @@ def _commit(
 
     final_schema = parse_schema(final_doc, common=common_schema, source=str(path))
 
-    entity_doc = _read_objects_doc(dir)
-    write_index_md(dir, final_schema, entity_doc)
+    write_index_md(dir, final_schema)
 
     if "questions" in patch:
         _merge_questions(dir, patch["questions"])
@@ -186,9 +185,9 @@ def _merge_questions(dir: Path, questions_patch) -> None:
     path.write_text(json.dumps(merged, sort_keys=True, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def write_index_md(dir: Path, schema_obj: Schema, objects_doc: Optional[dict]) -> None:
-    """index.md を作り直す（`init` と `_commit` の両方から使う）。"""
-    body = export.to_markdown(schema_obj, objects_doc)
+def write_index_md(dir: Path, schema_obj: Schema) -> None:
+    """index.md を作り直す（`init` と `_commit` の両方から使う）。件数は載せない（`onto types` / `query` で見る）。"""
+    body = export.to_markdown(schema_obj)
     summary = _build_summary(schema_obj)
     updated = datetime.date.today().isoformat()
     text = f'---\ntitle: "オントロジー"\nsummary: "{summary}"\nupdated: "{updated}"\n---\n\n{body}'
@@ -226,16 +225,6 @@ def _read_ontology_doc(dir: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise OntoError(f"{path}: JSON として読めない（{e}）")
-
-
-def _read_objects_doc(dir: Path) -> dict:
-    path = Path(dir) / "objects.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
 
 
 def _summarize_patch(patch: dict) -> list:

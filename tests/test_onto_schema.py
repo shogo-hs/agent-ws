@@ -191,6 +191,21 @@ class RejectionTest(unittest.TestCase):
             schema.parse_schema(doc)
         self.assertTrue(any("min" in p and "max" in p for p in cm.exception.problems))
 
+    def test_modify_target_many_param_is_rejected(self):
+        doc = {
+            "ontology": "t", "version": 1,
+            "object_types": {"Item": {"properties": {"title": {"type": "string"}}}},
+            "action_types": {
+                "DoIt": {
+                    "parameters": {"items": {"object_type": "Item", "many": True}},
+                    "rules": [{"modify": "items", "set": {"title": "'x'"}}],
+                },
+            },
+        }
+        with self.assertRaises(SchemaError) as cm:
+            schema.parse_schema(doc)
+        self.assertTrue(any("many の引数は使えない" in p for p in cm.exception.problems))
+
     def test_param_with_both_type_and_object_type_is_rejected(self):
         doc = {
             "ontology": "t", "version": 1,

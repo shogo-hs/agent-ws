@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from .errors import StoreError
+from .errors import HiddenPropertyError, StoreError
 
 _MISSING = object()
 
@@ -29,6 +29,7 @@ class Store:
         self.common = common
         self.doc = self._load_doc()
         self._rev_index: Optional[dict] = None
+        self.hide_hidden: bool = False  # query.py が agent=True のとき一時的に立てる
 
     # --- 読み込み -----------------------------------------------------
 
@@ -54,6 +55,7 @@ class Store:
         self.common = common
         self.doc = doc
         self._rev_index = None
+        self.hide_hidden = False
         return self
 
     # --- 照会 -----------------------------------------------------------
@@ -202,7 +204,10 @@ class ObjView:
             return self.type
         props = self.store.schema.props(self.type)
         if name in props:
-            return self._prop_value(props[name])
+            prop = props[name]
+            if self.store.hide_hidden and not prop.agent_visible:
+                raise HiddenPropertyError(f"'{self.type}' の '{name}' は非表示のプロパティ")
+            return self._prop_value(prop)
         links_from = self.store.schema.links_from(self.type)
         if name in links_from:
             return self._forward_link(links_from[name])

@@ -230,7 +230,7 @@ run_questions(store, doc: dict, actor: Actor) -> list[QResult]   # QResult(id, o
 to_jsonschema(schema: Schema) -> dict          # {"actions": {name: {"name", "description", "input_schema"}}, "objects": {type: <JSON Schema>}}
 to_turtle(schema: Schema, objects: dict | None = None, base: str | None = None) -> str   # RDFS/OWL の語彙 + SHACL の形 + 実体のトリプル
 to_mermaid(schema: Schema) -> str              # erDiagram
-to_markdown(schema: Schema, objects: dict | None = None) -> str    # index.md の本文（型の表・Mermaid・アクションの前提条件と承認）
+to_markdown(schema: Schema, objects: dict | None = None) -> str    # index.md の本文（型の表・Mermaid・アクションの前提条件と承認）。件数は載せない（onto act で実体が増減すると古くなるため。objects は受け取るが使わない。件数は onto types / query で見る）
 ```
 
 Turtle の決め: 既定の base は `https://example.com/onto/<名前>#`（接頭辞 `ex:`）。型は `owl:Class`（`rdfs:label`・`rdfs:subClassOf`・same_as は `rdfs:seeAlso`）。プロパティは `ex:<prop>` の `owl:DatatypeProperty`、リンクは `ex:<link>` の `owl:ObjectProperty`（inverse があれば `owl:inverseOf ex:<inverse>`）。**両端は `rdfs:domain` / `rdfs:range` では書かず、`schema:domainIncludes` / `schema:rangeIncludes`（推論を起こさない注釈）で書く。** `rdfs:range` は制約ではなく推論規則なので、RDFS 推論つきで検査すると型違いのリンク先に型が付いてしまい、`sh:class` が効かなくなる（pySHACL で実測）。制約は SHACL だけに持たせ、RDFS 推論は `rdfs:subClassOf` による型の包含にだけ使う。形は型ごとに `ex:<Type>Shape a sh:NodeShape; sh:targetClass ex:<Type>; sh:closed true; sh:ignoredProperties (rdf:type …)`（`sh:targetClass` は下位の型の実体にも当たるので、上位の型の形の ignoredProperties には、下位の型だけが持つプロパティとリンクを足す。制約そのものは下位の型の形が受け持つ）、継承込みのプロパティとリンクを `sh:property` に並べ、`sh:datatype`（string/text→xsd:string、int→xsd:integer、number→xsd:decimal、bool→xsd:boolean、date→xsd:date、datetime→xsd:dateTime）・`sh:in`・`sh:minCount`/`sh:maxCount`・`sh:minInclusive`/`sh:maxInclusive`・`sh:pattern`・`sh:class`、逆向きの件数は `sh:path [ sh:inversePath ex:<link> ]`。実体は `<base の # を / に替えたもの><Type>/<id>`。`unique` は SHACL Core に無いので書き出さない。
@@ -242,8 +242,8 @@ propose(store, patch: dict, actor: Actor, *, why: str = "") -> GovResult      # 
 approve_schema(onto_dir: Path, common_dir: Path | None, proposal_id: str, approver: Actor) -> GovResult
 ```
 
-`propose`: `merge_patch` → `parse_schema`（SchemaError なら rejected で problems を全部返す）→ `lint`（error があれば rejected。warn は findings に入れて人に見せる）→ 今の実体を新しい定義で `validate`（違反があれば rejected で一覧）→ governance が stage で actor が人でなければ `proposals/S-NNNN.json`（`{"id", "kind": "schema", "status": "open", "patch", "summary": [差分の要約の行], "findings": [...], "actor", "why", "created"}`）を書いて staged。auto か、actor が人なら反映。`patch` に `governance` が含まれるときは常に stage（人の承認が要る）。
-反映: `version` を 1 上げて `ontology.json` を原子的に置き換え（`sort_keys` はしない。キーの順は元のまま、`indent=2, ensure_ascii=False`）、`index.md` を作り直し（`export.to_markdown` に frontmatter `title` / `summary` を付ける。summary は「オントロジー: 型 N・つながり N・できること N（名前の列挙）。読むのは scripts/ws onto query / show、変えるのは scripts/ws onto act だけ」の 1 行で 200 字以内）、記録に `kind: schema`（`edits` の代わりに `patch` と新旧の `schema.hash`）。`questions` キーを持つ patch は `questions.json` にマージする。
+`propose`: `merge_patch` → `parse_schema`（SchemaError なら rejected で problems を全部返す）→ `lint`（error があれば rejected。warn は findings に入れて人に見せる）→ 今の実体を新しい定義で `validate`（違反があれば rejected で一覧）→ **governance が stage なら、実行者が人でも** `proposals/S-NNNN.json`（`{"id", "kind": "schema", "status": "open", "patch", "summary": [差分の要約の行], "findings": [...], "actor", "why", "created"}`）を書いて staged（反映は `approve_schema` を通った承認だけがする）。governance が auto なら反映。`patch` に `governance` が含まれるときは常に stage（人の承認が要る）。「実行者が人なら承認を省く」はやらない（疑似端末や session 変数の偽装で素通りするのを防ぐため。人が自分で `define apply` を実行しても、governance が stage なら必ず実行待ちになる）。
+反映: `version` を 1 上げて `ontology.json` を原子的に置き換え（`sort_keys` はしない。キーの順は元のまま、`indent=2, ensure_ascii=False`）、`index.md` を作り直し（`write_index_md(dir, schema_obj)`。`export.to_markdown` に frontmatter `title` / `summary` を付ける。summary は「オントロジー: 型 N・つながり N・できること N（名前の列挙）。読むのは scripts/ws onto query / show、変えるのは scripts/ws onto act だけ」の 1 行で 200 字以内）、記録に `kind: schema`（`edits` の代わりに `patch` と新旧の `schema.hash`）。`questions` キーを持つ patch は `questions.json` にマージする。
 `approve_schema` は、積んだあとに定義が変わっていても通るよう、**今の** ontology.json に patch を当て直して検査からやり直す。
 
 ### cli.py — `scripts/ws onto …` の入口
@@ -261,13 +261,13 @@ class Ctx:
     user: str                        # 人の名前（環境変数 WS_USER。無ければ "human"）
 main(argv: list[str], ctx: Ctx) -> int                  # 終了コード。0 反映・照会の成功 / 3 実行待ち / 4 拒否 / 1 その他の誤り
 handle_prompt(prompt: str, ctx: Ctx) -> str | None      # UserPromptSubmit から。承認・却下の文面なら実行して結果の文（1〜3 行）。違えば None
-doctor_problems(ctx: Ctx) -> list[str]                  # 全範囲の 制約違反・lint の warn・7 日を超えた実行待ち・評価の失敗・ハッシュの不一致
+doctor_problems(ctx: Ctx) -> list[str]                  # 全範囲の 制約違反・lint の warn・7 日を超えた実行待ち・評価の失敗・ハッシュの不一致。評価は固定の実行者（下記）で判定するので、誰が doctor を走らせても結果は変わらない
 alias_pairs(ctx: Ctx, project: str | None) -> dict[str, str]   # transcript normalize 用 {別名: 正式表記}。共通 → 案件の順で案件が勝つ。2 字未満は捨てる
 pending_count(root: Path) -> int                        # ステータスライン用。proposals/*.json の status open を数えるだけ（定義を読まない）
 ```
 
 範囲の決め方: `--common` なら共通、`--project <案件>` ならその案件、どちらも無ければ 現在のタスクの案件（オントロジーがあれば）→ 共通。置き場は `root/knowledges/ontology` と `root/projects/<案件>/knowledges/ontology`。
-誰が実行したか: `ctx.session` があればエージェント（`Actor("agent", "claude-code" か "codex", session)`）。無くて `is_tty` なら人。どちらでもなければ `Actor("agent", "script")`。**approve / reject / adopt は 人（session 無し かつ TTY）でなければ拒否**し、`handle_prompt` 経由（人の発言）は人として扱う。
+誰が実行したか: `ctx.session` があればエージェント（`Actor("agent", "claude-code" か "codex", session)`）。無くて `is_tty` なら人。どちらでもなければ `Actor("agent", "script")`。**approve / reject / adopt は 人（session 無し かつ TTY）でなければ拒否**し、`handle_prompt` 経由（人の発言）は人として扱う。`eval` と `doctor_problems` の質問の評価だけは例外で、`_actor_for(ctx)` を使わず固定の `Actor("agent", "eval")` で判定する（叩く人によって `expect.status` の判定が変わらないように。この actor は評価専用で記録には残らない）。
 
 | コマンド | 中身 |
 |---|---|
@@ -280,7 +280,7 @@ pending_count(root: Path) -> int                        # ステータスライ�
 | `define apply <patch.json> [--why 文]` | `govern.propose` |
 | `approve <[範囲/]P-… か S-…>` / `reject <id> --reason 文` | 人だけ。P は `engine.approve`、S は `govern.approve_schema` |
 | `proposals [--all]` | 実行待ちの一覧（id・アクションと引数の要約・誰が・いつ・役割） |
-| `validate` / `lint` / `eval` | 全件の制約検査 / 検収 / questions.json の評価。問題があれば終了コード 1 |
+| `validate` / `lint` / `eval` | 全件の制約検査 / 検収 / questions.json の評価（固定の実行者。誰が叩いても同じ判定）。問題があれば終了コード 1 |
 | `export --format jsonschema\|turtle\|mermaid\|markdown [--out path]` | 書き出し。turtle は共通の定義と実体も含める |
 | `log [--object 型:id] [--action 名前] [--limit N]` | 記録の照会（古い順。1 行 1 件に詰める） |
 | `adopt --note 文` | 人だけ。手で直した実体を記録に取り込む |
@@ -291,12 +291,13 @@ pending_count(root: Path) -> int                        # ステータスライ�
 
 - `onto` サブコマンド: 後ろの引数を `cli.main` に渡す（`argparse.REMAINDER`）。
 - PreToolUse（**現在のタスクの有無に関係なく**。`"scripts/ws" in blob` の素通しより**前**に置く）:
-  1. ツール入力のどこかに `knowledges/ontology/` の `objects.json`・`log.jsonl`・`proposals/`・`.lock` が出てきたら拒否（読みも書きも）。理由文で `scripts/ws onto query / show / log / act` に誘導する。
-  2. Edit / Write / MultiEdit / NotebookEdit の対象が `knowledges/ontology/` の下（`ontology.json`・`index.md`・`questions.json` を含む全部）なら拒否し、`scripts/ws onto define apply <patch.json>` に誘導する。Read は通す。Codex CLI のファイル編集は `tool_name` が `apply_patch` で、対象はパッチ本文（`tool_input.command`）の `*** Update File: <path>` / `*** Add File:` / `*** Delete File:` / `*** Move to:` の行に入る（0.153.4 の実機で記録）。これも同じ扱いで拒否する。
+  1. 直接読んでよいのは常に `ontology.json`・`index.md`・`questions.json` の3つだけ（許すものを列挙し、それ以外を拒否する）。Read の `file_path`／Grep の `path`／Glob の `pattern`（と `path`）が `knowledges/ontology`（または `knowledges/` を伴わない `ontology/<名前>`）に言及していたら、末尾がこの3つのどれかのときだけ通す。ディレクトリ指定・`objects.json`・`log.jsonl`・`proposals/` 配下・その他のファイルは拒否し、理由文で `scripts/ws onto query / show / log / act` に誘導する。Grep の `path` が `…/knowledges` で終わり、その下に `ontology/` が実在するときは、`glob` が未指定なら `updatedInput` で `glob: "*.md"` を足して通し（ナレッジは `.md` だけなので意味は変わらない）、`glob` が `.md` で終わらない指定（`*.json` `*` など）なら拒否。Glob は `pattern` が `.md` で終わらなければ拒否。
+  2. Edit / Write / MultiEdit / NotebookEdit の対象が `knowledges/ontology/` の下（`ontology.json`・`index.md`・`questions.json` を含む全部）なら拒否し、`scripts/ws onto define apply <patch.json>` に誘導する。Read は 1. の3ファイルだけ通す。Codex CLI のファイル編集は `tool_name` が `apply_patch` で、対象はパッチ本文（`tool_input.command`）の `*** Update File: <path>` / `*** Add File:` / `*** Delete File:` / `*** Move to:` の行に入る（0.153.4 の実機で記録）。これも同じ扱いで拒否する。
   3. Bash / PowerShell / shell のコマンドが `onto\s+(approve|reject|adopt)` を含む、または `claude` / `codex` の起動と `(承認|却下|approve|reject)\s+\S*[PS]-\d{4}` を同時に含むなら拒否（承認は人だけ）。
-  4. Bash / PowerShell / shell のコマンドが `knowledges/ontology/` に触れていて `scripts/ws onto` の呼び出しでないとき、読むだけの語（`cat` `head` `tail` `less` `wc` `ls` `grep` `rg` `jq` `git diff` `git log` `git status`）で始まり `>` `tee` `-i` を含まないものだけ通す。
-  5. パスを書かずに実体へ触れる形も止める: コマンドの中の `cd` / `pushd` の行き先が `knowledges/ontology` なら拒否。hook の入力の `cwd` がオントロジーのディレクトリの中なら、`cd` で出る以外の全ツールを拒否（Bash の `cd` はセッションに残り、次のコマンドや Grep にはパスが現れないため）。コマンドが `knowledges/ontology` に触れていて `objects.json`・`log.jsonl`・`proposals`・`.lock` の名前がどこかに出てきたら拒否。
-  - 環境変数 `WS_ONTO_MAINT=1` が **hook のプロセス**にあれば 1・2・4 を止めない（agent-ws 自体の保守用。エージェントの Bash からは hook のプロセスの環境を変えられない）。3 は常に効く。
+  4. Bash / PowerShell / shell のコマンドが `knowledges/ontology/` か `ontology/<名前>` に言及していたら、(i) 各区切り（`;` `&&` `||` `|` 改行）の先頭の語が読むだけの語（`cat` `head` `tail` `less` `wc` `ls` `grep` `rg` `jq` `cd` `echo` `sort` `uniq` `cut` `git diff` `git log` `git status`）であること、(ii) 言及している各トークン（空白区切り。引用符は外して見る）が glob の文字（`*` `?` `[`）を含まず末尾が1.の3ファイルのどれかであること、(iii) `-r` `-R` `--recursive` と `find` `tree` `rg` を含まないこと、を全部満たすときだけ通す（`> tee`` `` `$(` は書き換え・サブシェルとして常に拒否。`2>/dev/null` 等の null へのリダイレクトは先に取り除いてから見る）。コマンドに `objects.json`・`log.jsonl` が語として出てきて `tests/fixtures` を含まないなら、ディレクトリ名の言及が無くても拒否する。`grep -r` / `rg` / `find` で `…/knowledges` そのものを再帰走査する形は、その `knowledges` の下に `ontology/` が実在するなら（`ontology` という語が出てこなくても）拒否し、「knowledges/ を再帰で舐めない」と案内する。
+  5. パスを書かずに実体へ触れる形も止める: コマンドの中の `cd` / `pushd` の行き先が `knowledges/ontology` なら拒否。hook の入力の `cwd` がオントロジーのディレクトリの中なら、`cd` で出る以外の全ツールを拒否（Bash の `cd` はセッションに残り、次のコマンドや Grep にはパスが現れないため）。
+  6. Bash / PowerShell / shell のコマンドに `onto` が出てきて、かつセッション変数を外す（`env -u CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` の `unset` / `VAR=` を空にして前置）か疑似端末で包む（`script` コマンド）気配があれば拒否（3 と同じ「承認は人だけ」の理由文に一文足す）。
+  - 環境変数 `WS_ONTO_MAINT=1` が **hook のプロセス**にあれば 1・2・4・5 を止めない（agent-ws 自体の保守用。エージェントの Bash からは hook のプロセスの環境を変えられない）。3・6 は常に効く。
 - UserPromptSubmit: キャッシュの判定より前に、文面が承認・却下の形なら `cli.handle_prompt` を呼び、結果を `additionalContext` の JSON で返して**その発言は通す**（エージェントが結果を見て続けられるように）。
 - `doctor`: `cli.doctor_problems` の行を足す。`transcript normalize`: `cli.alias_pairs` を用語集の対に合流（用語集が勝つ）。どちらも、オントロジーのディレクトリが 1 つも無ければ wsonto を import しない。
 - ステータスライン: `knowledges/ontology/proposals` か `projects/*/knowledges/ontology/proposals` に open があれば `承認待ち N` を足す。

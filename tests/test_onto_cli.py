@@ -13,6 +13,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -170,6 +171,13 @@ class ActTest(CliCaseTest):
         self.assertEqual(code, 0)
         data = json.loads(out)
         self.assertEqual(data["status"], "committed")
+
+    def test_human_ctx_long_estimate_still_requires_approval(self) -> None:
+        # 「実行者が人なら承認を省く」を engine.act 側から削る担当と同時作業。
+        # 直り待ちなら code は 0（素通り）になり、ここだけ失敗してよい（報告に書く）。
+        code, out, _err = self._run(["act", "IssueEstimate"] + _base_estimate_args(months="24"), self.human_ctx)
+        self.assertEqual(code, 3)
+        self.assertIn("実行待ち", out)
 
     def test_transfer_person_common_action_stages_in_common(self) -> None:
         code, out, _err = self._run(["act", "TransferPerson", "person=suzuki", "to=tech"])
@@ -332,6 +340,39 @@ class DefineApplyTest(CliCaseTest):
         self.assertEqual(code, 3)
         self.assertIn("実行待ち", out)
 
+    def test_human_define_apply_also_stages_when_governance_stage(self) -> None:
+        # 「実行者が人なら承認を省く」はやらない。人が define apply を叩いても
+        # governance が stage（fixture の既定）なら実行待みになり、反映は approve だけがする。
+        before = (self.project_dir / "ontology.json").read_bytes()
+        patch = {"object_types": {"Note": {"label": "メモ", "properties": {"body": {"type": "text", "label": "本文"}}}}}
+        code, out, _err = self._run(["define", "apply", self._write_patch(patch)], self.human_ctx)
+        self.assertEqual(code, 3)
+        self.assertIn("実行待ち S-0001", out)
+        self.assertEqual((self.project_dir / "ontology.json").read_bytes(), before)
+
+        code2, out2, _err = self._run(["approve", "S-0001"], self.human_ctx)
+        self.assertEqual(code2, 0)
+        self.assertIn("反映", out2)
+        doc = json.loads((self.project_dir / "ontology.json").read_text(encoding="utf-8"))
+        self.assertEqual(doc["version"], 2)
+
+    def test_human_define_apply_commits_when_governance_auto(self) -> None:
+        auto_dir = self.root / "projects" / "autogov" / "knowledges" / "ontology"
+        auto_dir.mkdir(parents=True)
+        doc = {
+            "ontology": "autogov", "version": 1, "governance": {"schema_changes": "auto"},
+            "object_types": {}, "link_types": {}, "action_types": {},
+        }
+        (auto_dir / "ontology.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        ctx = cli.Ctx(
+            root=self.root, current_project="autogov", current_task=None,
+            session=None, is_tty=True, user="reviewer",
+        )
+        patch = {"object_types": {"Note": {"label": "メモ", "properties": {"body": {"type": "text", "label": "本文"}}}}}
+        code, out, _err = self._run(["define", "apply", self._write_patch(patch)], ctx)
+        self.assertEqual(code, 0)
+        self.assertIn("反映", out)
+
 
 # --- validate / lint / eval / export / log ----------------------------------
 
@@ -349,6 +390,12 @@ class ValidateLintEvalExportLogTest(CliCaseTest):
 
     def test_eval_all_ok(self) -> None:
         code, out, _err = self._run(["eval"])
+        self.assertEqual(code, 0)
+        self.assertIn("10/10 ok", out)
+
+    def test_eval_all_ok_for_human_ctx(self) -> None:
+        # eval は固定の実行者で判定する（叩く人で expect.status の判定が変わらないように）
+        code, out, _err = self._run(["eval"], self.human_ctx)
         self.assertEqual(code, 0)
         self.assertIn("10/10 ok", out)
 
@@ -390,6 +437,10 @@ class DoctorAliasPendingTest(CliCaseTest):
     def test_doctor_clean(self) -> None:
         self.assertEqual(cli.doctor_problems(self.agent_ctx), [])
 
+    def test_doctor_clean_for_human_ctx(self) -> None:
+        # eval と同じ固定の実行者で判定する（人の端末から doctor を叩いても結果は変わらない）
+        self.assertEqual(cli.doctor_problems(self.human_ctx), [])
+
     def test_doctor_detects_hash_mismatch_and_violation(self) -> None:
         code, _out, _err = self._run(["act", "IssueEstimate"] + _base_estimate_args())
         self.assertEqual(code, 0)
@@ -415,6 +466,48 @@ class DoctorAliasPendingTest(CliCaseTest):
         code, _out, _err = self._run(["act", "IssueEstimate"] + _base_estimate_args(months="24"))
         self.assertEqual(code, 3)
         self.assertEqual(cli.pending_count(self.root), 2)
+
+
+# --- 想定外の例外（Y-4）------------------------------------------------------
+
+
+class InternalErrorHandlingTest(CliCaseTest):
+    def test_types_with_unreadable_objects_json_exits_1_without_traceback(self) -> None:
+        (self.project_dir / "objects.json").write_text("{not json", encoding="utf-8")
+        code, _out, err = self._run(["types"])
+        self.assertEqual(code, 1)
+        self.assertNotIn("Traceback", err)
+        self.assertLessEqual(len(err.strip().splitlines()), 2)
+
+    def test_doctor_reports_other_scope_when_one_scope_is_broken(self) -> None:
+        # common 側に実体の違反を作り、project 側の objects.json を壊す。
+        # project は common 抜きでは読めないので project 側はエラー 1 行になるが、
+        # common 側の違反は消えずに残る（doctor 全体は落ちない）。
+        doc = json.loads((self.common_dir / "objects.json").read_text(encoding="utf-8"))
+        del doc["Person"]["sato"]["name"]
+        (self.common_dir / "objects.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        (self.project_dir / "objects.json").write_text("{not json", encoding="utf-8")
+
+        problems = cli.doctor_problems(self.agent_ctx)
+        self.assertTrue(any("Person:sato" in p and "MIN_COUNT" in p for p in problems))
+        self.assertTrue(any("acme" in p or "projects" in p for p in problems))
+
+    def test_doctor_validate_internal_error_does_not_stop_other_checks(self) -> None:
+        with mock.patch.object(cli, "validate", side_effect=RuntimeError("boom")):
+            problems = cli.doctor_problems(self.agent_ctx)
+        self.assertTrue(any("validate で内部エラー（RuntimeError: boom）" in p for p in problems))
+        # validate だけ落ちて lint は普通に走った（他の検査が続いている証拠。fixture は lint 0 件）
+        self.assertFalse(any("lint で内部エラー" in p for p in problems))
+        self.assertFalse(any(" lint " in p for p in problems))
+
+    def test_main_reports_unexpected_exception_as_one_line_without_traceback(self) -> None:
+        with mock.patch.object(cli.lint_mod, "lint", side_effect=RuntimeError("boom")):
+            code, _out, err = self._run(["lint"])
+        self.assertEqual(code, 1)
+        self.assertIn("内部エラー", err)
+        self.assertIn("RuntimeError", err)
+        self.assertNotIn("Traceback", err)
+        self.assertLessEqual(len(err.strip().splitlines()), 2)
 
 
 # --- init / 範囲の決め方 -------------------------------------------------------

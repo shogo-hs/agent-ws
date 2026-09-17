@@ -7,13 +7,31 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from contextlib import contextmanager
 from typing import Any, Optional
 
-from .errors import ExprError, OntoError
+from .errors import ExprError, HiddenPropertyError, OntoError
 from .expr import Expr, compile_expr
 from .store import _jsonify  # noqa: SLF001 -- 同じ package 内の共有ヘルパーを再利用する
 
 _HIDDEN = "（非表示）"
+
+
+@contextmanager
+def _agent_visibility(store: Any, agent: bool):
+    """agent=True の間だけ、store（と繋がっている common）の非表示プロパティを隠す。"""
+    stores = []
+    if agent:
+        stores.append(store)
+        if getattr(store, "common", None) is not None:
+            stores.append(store.common)
+        for s in stores:
+            s.hide_hidden = True
+    try:
+        yield
+    finally:
+        for s in stores:
+            s.hide_hidden = False
 
 
 class _MissingName(ExprError):
@@ -42,6 +60,8 @@ class _WhereEnv(Mapping):
             return self._today
         try:
             return self._obj.onto_get(key)
+        except HiddenPropertyError:
+            raise ExprError(f"{key} は照会に使えない（非表示のプロパティ）") from None
         except KeyError:
             pass
         if key in self._constants:
@@ -71,34 +91,48 @@ def query(
     if type_name not in schema.object_types:
         raise OntoError(f"知らない型 '{type_name}'")
 
-    compiled: Optional[Expr] = compile_expr(where) if where else None
+    with _agent_visibility(store, agent):
+        compiled: Optional[Expr] = compile_expr(where) if where else None
 
-    matched: list = []
-    attempted = 0
-    missing_count = 0
-    last_missing: Optional[_MissingName] = None
-    for obj in store.all(type_name):
-        if compiled is None:
-            matched.append(obj)
-            continue
-        attempted += 1
-        env = _WhereEnv(obj, schema.constants, today)
-        try:
-            ok = compiled.eval(env)
-        except _MissingName as e:
-            missing_count += 1
-            last_missing = e
-            continue
-        if ok:
-            matched.append(obj)
+        matched: list = []
+        attempted = 0
+        missing_count = 0
+        last_missing: Optional[_MissingName] = None
+        for obj in store.all(type_name):
+            if compiled is None:
+                matched.append(obj)
+                continue
+            attempted += 1
+            env = _WhereEnv(obj, schema.constants, today)
+            try:
+                ok = compiled.eval(env)
+            except _MissingName as e:
+                missing_count += 1
+                last_missing = e
+                continue
+            if ok:
+                matched.append(obj)
 
-    if compiled is not None and attempted > 0 and missing_count == attempted:
-        raise last_missing  # type: ignore[misc]
+        if compiled is not None and attempted > 0 and missing_count == attempted:
+            raise last_missing  # type: ignore[misc]
 
-    matched.sort(key=lambda o: o.id)
-    total = len(matched)
-    rows_objs = matched if limit is None else matched[:limit]
-    rows = [_build_row(o, select, agent) for o in rows_objs]
+        matched.sort(key=lambda o: o.id)
+        total = len(matched)
+        rows_objs = matched if limit is None else matched[:limit]
+        built = [_build_row(o, select) for o in rows_objs]
+
+        if select is not None and built:
+            missing_everywhere = set(built[0][1])
+            for _row, missing in built[1:]:
+                missing_everywhere &= missing
+            if missing_everywhere:
+                name = sorted(missing_everywhere)[0]
+                raise OntoError(
+                    f"'{type_name}' に '{name}' は無い。使える名前: "
+                    f"{', '.join(_available_names(schema, type_name))}"
+                )
+
+        rows = [row for row, _missing in built]
     return rows, total
 
 
@@ -107,51 +141,48 @@ def _default_cols(schema: Any, type_name: str) -> list:
     return list(ot.summary) if ot is not None else []
 
 
-def _link_target_type(schema: Any, type_name: str, link_name: str) -> Optional[str]:
-    links_from = schema.links_from(type_name)
-    if link_name in links_from:
-        return links_from[link_name].to_type
-    links_to = schema.links_to(type_name)
-    if link_name in links_to:
-        return links_to[link_name].from_type
-    return None
+def _available_names(schema: Any, type_name: str) -> list:
+    names = ["id"]
+    names += sorted(schema.props(type_name))
+    names += sorted(schema.links_from(type_name))
+    names += sorted(schema.links_to(type_name))
+    return names
 
 
-def _resolve_column(obj: Any, col: str, agent: bool) -> Any:
-    schema = obj.store.schema
+def _resolve_column(obj: Any, col: str) -> Any:
     link_name, sep, prop_name = col.partition(".")
-    if sep:
-        target_type = _link_target_type(schema, obj.type, link_name)
-        if target_type is not None:
-            prop = schema.props(target_type).get(prop_name)
-            if agent and prop is not None and not prop.agent_visible:
-                return _HIDDEN
-        target = obj.onto_get(link_name)
-        if target is None:
-            value: Any = None
-        elif isinstance(target, list):
-            value = [t.onto_get(prop_name) for t in target]
+    try:
+        if sep:
+            target = obj.onto_get(link_name)
+            if target is None:
+                value: Any = None
+            elif isinstance(target, list):
+                value = [t.onto_get(prop_name) for t in target]
+            else:
+                value = target.onto_get(prop_name)
         else:
-            value = target.onto_get(prop_name)
-    else:
-        prop = schema.props(obj.type).get(col)
-        if agent and prop is not None and not prop.agent_visible:
-            return _HIDDEN
-        value = obj.onto_get(col)
+            value = obj.onto_get(col)
+    except HiddenPropertyError:
+        return _HIDDEN
     return _jsonify(value)
 
 
-def _build_row(obj: Any, select: Optional[list], agent: bool) -> dict:
+def _build_row(obj: Any, select: Optional[list]) -> "tuple[dict, set]":
     schema = obj.store.schema
     cols = _default_cols(schema, obj.type) if select is None else [
         c for c in select if c not in ("id", "type")
     ]
     row: dict = {"id": obj.id, "type": obj.type}
+    missing: set = set()
     for col in cols:
         if col in row:
             continue
-        row[col] = _resolve_column(obj, col, agent)
-    return row
+        try:
+            row[col] = _resolve_column(obj, col)
+        except KeyError:
+            row[col] = "-"
+            missing.add(col)
+    return row, missing
 
 
 # --- show ---------------------------------------------------------------
@@ -204,51 +235,52 @@ def _proposals_for(store: Any, ref: str, id_: str) -> list:
 def show(
     store: Any, ref_or_id: str, type_name: Optional[str] = None, agent: bool = False
 ) -> dict:
-    if type_name is not None:
-        obj = store.find(type_name, ref_or_id)
-        ref = f"{obj.type}:{obj.id}" if obj is not None else f"{type_name}:{ref_or_id}"
-    else:
-        ref = ref_or_id
-        obj = store.get(ref_or_id)
-    if obj is None:
-        raise OntoError(f"'{ref}' は見つからない")
+    with _agent_visibility(store, agent):
+        if type_name is not None:
+            obj = store.find(type_name, ref_or_id)
+            ref = f"{obj.type}:{obj.id}" if obj is not None else f"{type_name}:{ref_or_id}"
+        else:
+            ref = ref_or_id
+            obj = store.get(ref_or_id)
+        if obj is None:
+            raise OntoError(f"'{ref}' は見つからない")
 
-    schema = obj.store.schema
-    ot = schema.object_types.get(obj.type)
-    type_label = ot.label if ot is not None and ot.label else obj.type
+        schema = obj.store.schema
+        ot = schema.object_types.get(obj.type)
+        type_label = ot.label if ot is not None and ot.label else obj.type
 
-    props: dict = {}
-    for pname, prop in schema.props(obj.type).items():
-        if agent and not prop.agent_visible:
-            continue
-        value = obj.onto_get(pname)
-        if value is None:
-            continue
-        if isinstance(value, list) and not value:
-            continue
-        props[pname] = _jsonify(value)
+        props: dict = {}
+        for pname, prop in schema.props(obj.type).items():
+            if agent and not prop.agent_visible:
+                continue
+            value = obj.onto_get(pname)
+            if value is None:
+                continue
+            if isinstance(value, list) and not value:
+                continue
+            props[pname] = _jsonify(value)
 
-    links: dict = {}
-    for lname in schema.links_from(obj.type):
-        entries = _link_entries(obj, lname)
-        if entries:
-            links[lname] = entries
+        links: dict = {}
+        for lname in schema.links_from(obj.type):
+            entries = _link_entries(obj, lname)
+            if entries:
+                links[lname] = entries
 
-    inverse: dict = {}
-    for iname in schema.links_to(obj.type):
-        entries = _link_entries(obj, iname)
-        if entries:
-            inverse[iname] = entries
+        inverse: dict = {}
+        for iname in schema.links_to(obj.type):
+            entries = _link_entries(obj, iname)
+            if entries:
+                inverse[iname] = entries
 
-    return {
-        "ref": obj.ref,
-        "type": obj.type,
-        "type_label": type_label,
-        "props": props,
-        "links": links,
-        "inverse": inverse,
-        "proposals": _proposals_for(store, obj.ref, obj.id),
-    }
+        return {
+            "ref": obj.ref,
+            "type": obj.type,
+            "type_label": type_label,
+            "props": props,
+            "links": links,
+            "inverse": inverse,
+            "proposals": _proposals_for(store, obj.ref, obj.id),
+        }
 
 
 # --- 表示（人とエージェントが読む詰めたテキスト） --------------------------

@@ -407,6 +407,11 @@ def _resolve_target_type(target: Any, params: dict, as_types: dict) -> Optional[
     return None
 
 
+def _target_is_many_param(target: Any, params: dict) -> bool:
+    p = params.get(target) if isinstance(target, str) else None
+    return bool(p is not None and p.many)
+
+
 def _all_as_names(raw: dict) -> set:
     names = set()
     for r in (raw.get("rules") or []):
@@ -754,6 +759,8 @@ def parse_schema(doc: dict, common: Optional[Schema] = None, source: str = "") -
                 target_type = _resolve_target_type(target, params, as_types)
                 if target_type is None:
                     problems.append(f"{rwhere}.modify: 対象 '{target}' が引数（object_type）でも as の名前でもない")
+                elif _target_is_many_param(target, params):
+                    problems.append(f"{rwhere}.modify: modify / delete の対象に many の引数は使えない")
                 target_props = schema.props(target_type) if target_type else {}
                 target_links = schema.links_from(target_type) if target_type else {}
                 new_set = {}
@@ -792,6 +799,8 @@ def parse_schema(doc: dict, common: Optional[Schema] = None, source: str = "") -
                 target_type = _resolve_target_type(target, params, as_types)
                 if target_type is None:
                     problems.append(f"{rwhere}.delete: 対象 '{target}' が引数（object_type）でも as の名前でもない")
+                elif _target_is_many_param(target, params):
+                    problems.append(f"{rwhere}.delete: modify / delete の対象に many の引数は使えない")
                 if_expr = None
                 if "if" in rraw:
                     if_expr = _compile_expr_safe(rraw.get("if"), allowed_expr, f"{rwhere}.if", problems)

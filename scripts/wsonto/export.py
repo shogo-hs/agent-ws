@@ -441,7 +441,9 @@ def _constraint_str(obj: Any) -> str:
 
 
 def to_markdown(schema: Schema, objects: Any = None) -> str:
-    lines: list = []
+    # objects は受け取るが使わない（件数は実体の増減で古くなるので index.md には載せない。
+    # 中身と件数は `scripts/ws onto types` / `query` で見る）
+    lines: list = ["件数と中身は `scripts/ws onto types` / `query` で見る（このファイルは定義だけ）。", ""]
     # 案件の index.md には案件で定義したものだけを並べる（共通の分は共通の index.md にある。図には両方を描く）
     own = lambda d: schema.scope == "common" or d.origin == "project"  # noqa: E731
     shared = sorted(n for n, d in schema.object_types.items() if not own(d))
@@ -527,22 +529,6 @@ def to_markdown(schema: Schema, objects: Any = None) -> str:
             else:
                 src = appr.when.src if appr.when else ""
                 lines.append(f"承認: `{src}` のとき実行待ち（担当: {appr.role or '-'}）")
-            lines.append("")
-
-    if objects:
-        counts: dict = {}
-        for od in _normalize_objects(objects):
-            for tname, entities in od.items():
-                if tname == "_meta" or not isinstance(entities, dict):
-                    continue
-                counts[tname] = counts.get(tname, 0) + len(entities)
-        if counts:
-            lines.append("## 件数")
-            lines.append("")
-            lines.append("| 型 | 件数 |")
-            lines.append("|---|---|")
-            for tname in sorted(counts):
-                lines.append(f"| {tname} | {counts[tname]} |")
             lines.append("")
 
     return "\n".join(lines) + "\n"

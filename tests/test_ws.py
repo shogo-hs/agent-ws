@@ -1166,6 +1166,92 @@ class OntoIntegrationTest(unittest.TestCase):
         self.assertEqual(hook_in("Grep", {"pattern": "sato"}), "deny")
         self.assertIsNone(hook_in("Bash", {"command": "cd ../../../.."}))
 
+    def hook_full(self, tool, tool_input, env=None):
+        """permissionDecision だけでなく updatedInput まで見たいときに使う（None なら橋渡しは何も言わない）。"""
+        r = self.ws("hook", "pre-tool-use", stdin=json.dumps({"tool_name": tool, "tool_input": tool_input}), env=env)
+        return json.loads(r.stdout)["hookSpecificOutput"] if r.stdout.strip() else None
+
+    def test_z1_denies_reads_outside_the_three_allowed_ontology_files(self):
+        """レビューで実測: 完全一致の objects.json 以外は拒否されていなかった。許すものを列挙し、
+        それ以外（ディレクトリ指定・glob・proposals 配下・状態ファイル）を拒否に切り替える。"""
+        cases = (
+            ("Bash", {"command": "grep -r 単価 projects/acme/knowledges/ontology/"}),
+            ("Bash", {"command": "cat projects/acme/knowledges/ontology/obj*"}),
+            ("Bash", {"command": "cat projects/acme/knowledges/*/objects.json"}),
+            ("Bash", {"command": "cd projects/acme/knowledges && cat ontology/objects.json"}),
+            ("Grep", {"path": "projects/acme/knowledges/ontology"}),
+            ("Bash", {"command": "ls projects/acme/knowledges/ontology/"}),
+            ("Bash", {"command": "cat projects/acme/knowledges/ontology/proposals/P-0001.json"}),
+            ("Read", {"file_path": "projects/acme/knowledges/ontology/extra.json"}),
+            ("Glob", {"pattern": "projects/acme/knowledges/ontology/*"}),
+            ("Bash", {"command": "rg 単価 projects/acme/knowledges"}),
+            ("Grep", {"path": "projects/acme/knowledges", "glob": "*.json"}),
+        )
+        for tool, tool_input in cases:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertEqual(self.hook(tool, tool_input), "deny")
+
+    def test_z1_allows_reads_of_the_three_allowed_ontology_files(self):
+        for name in ("ontology.json", "index.md", "questions.json"):
+            with self.subTest(name=name):
+                self.assertIsNone(self.hook("Read", {"file_path": f"projects/acme/knowledges/ontology/{name}"}))
+        allow_cases = (
+            ("Bash", {"command": "cat projects/acme/knowledges/ontology/index.md | head -20"}),
+            ("Bash", {"command": "grep -n label knowledges/ontology/ontology.json"}),
+            ("Grep", {"path": "projects/acme/knowledges/ontology/ontology.json"}),
+            ("Grep", {"path": "projects/acme/knowledges", "glob": "*.md"}),
+            ("Bash", {"command": "cat tests/fixtures/onto_case/project/objects.json"}),
+        )
+        for tool, tool_input in allow_cases:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertIsNone(self.hook(tool, tool_input))
+        # Grep path=…/knowledges（glob 未指定）は deny でなく、*.md に絞った updatedInput で通す
+        out = self.hook_full("Grep", {"path": "projects/acme/knowledges"})
+        self.assertEqual(out["permissionDecision"], "allow")
+        self.assertEqual(out["updatedInput"]["glob"], "*.md")
+        # オントロジーの無い案件では、この橋渡しは knowledges/ の再帰走査を止めない
+        # （他の規則で止まる場合はあってよいが、理由文にオントロジーの話が出てはいけない）
+        self.ws("project", "new", "plain")
+        out = self.hook_full("Bash", {"command": "grep -r x projects/plain/knowledges"})
+        if out is not None and out["permissionDecision"] == "deny":
+            self.assertNotIn("onto", out["permissionDecisionReason"])
+            self.assertNotIn("オントロジー", out["permissionDecisionReason"])
+
+    def test_z2_denies_onto_calls_via_stripped_session_vars_or_pty(self):
+        deny_cases = (
+            'env -u CLAUDE_CODE_SESSION_ID script -qc "scripts/ws onto act X" /dev/null',
+            "unset CODEX_THREAD_ID; scripts/ws onto act X",
+            "CLAUDE_CODE_SESSION_ID= scripts/ws onto define apply p.json",
+        )
+        for cmd in deny_cases:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.hook("Bash", {"command": cmd}), "deny")
+        # WS_ONTO_MAINT=1 でも止める（承認と同じ扱い）
+        self.assertEqual(self.hook("Bash", {"command": deny_cases[0]}, env={"WS_ONTO_MAINT": "1"}), "deny")
+        # 素直な呼び出しは deny でない
+        self.assertIsNone(self.hook("Bash", {"command": "scripts/ws onto act X a=1"}))
+
+    def test_z3_onto_readonly_regex_does_not_misfire_on_flags_or_null_redirects(self):
+        allow_cases = (
+            "grep -i estimate projects/acme/knowledges/ontology/ontology.json",
+            "cat projects/acme/knowledges/ontology/index.md 2>/dev/null",
+            "cat knowledges/ontology/index.md 2>&1 | head",
+        )
+        for cmd in allow_cases:
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.hook("Bash", {"command": cmd}))
+        # 書き出し先があるものは今までどおり拒否
+        self.assertEqual(self.hook("Bash", {"command": "cat knowledges/ontology/index.md > /tmp/x"}), "deny")
+
+    def test_recursive_flag_combined_with_other_letters_is_still_recursive(self):
+        """grep -rn / -Rin のように他の文字とくっついた再帰のフラグでも、knowledges/ の再帰の走査として止める。"""
+        for cmd in ("grep -rn 単価 projects/acme/knowledges", "grep -Rin 単価 projects/acme/knowledges/", "grep -nr 単価 knowledges"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.hook("Bash", {"command": cmd}), "deny")
+        for cmd in ("grep -n 決定 projects/acme/knowledges/index.md", "grep -in label knowledges/ontology/ontology.json"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.hook("Bash", {"command": cmd}))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,12 @@ class ShippedExamplesTest(unittest.TestCase):
             self.assertEqual(len(summary), 1)
             self.assertLessEqual(len(summary[0]), 230)  # 起動時の注入に 1 行で載る
 
+    def test_index_md_has_no_counts_section(self):
+        # 件数は onto act で実体が増減すると古くなる。onto types / query で見る
+        for d in (COMMON, EXAMPLE):
+            text = (d / "index.md").read_text(encoding="utf-8")
+            self.assertNotIn("## 件数", text)
+
 
 if __name__ == "__main__":
     unittest.main()

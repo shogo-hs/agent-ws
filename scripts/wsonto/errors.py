@@ -22,3 +22,12 @@ class ExprError(OntoError):
 
 class StoreError(OntoError):
     """実体の保管（objects.json）の読み書き・ロック・参照の解決の誤り。"""
+
+
+class HiddenPropertyError(KeyError):
+    """`Store.hide_hidden` が立っているときに `agent_visible: false` のプロパティへ触れた合図。
+
+    `KeyError` の子なので既存の `except KeyError` はそのまま拾える。利用者にそのまま
+    見せるものではなく、`query.py` の where / select がこれを見て ExprError か
+    「（非表示）」に変換してから使う（`OntoError` は継承しない）。
+    """

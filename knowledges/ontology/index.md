@@ -1,8 +1,10 @@
 ---
 title: "オントロジー"
 summary: "オントロジー: 型 4・つながり 4・できること 1（TransferPerson）。読むのは scripts/ws onto query / show、変えるのは scripts/ws onto act だけ"
-updated: "2026-09-17"
+updated: "2026-09-18"
 ---
+
+件数と中身は `scripts/ws onto types` / `query` で見る（このファイルは定義だけ）。
 
 ## 型
 
@@ -90,13 +92,4 @@ erDiagram
 - `person.belongs_to is None or person.belongs_to.id != to.id` → {person.name} は既に {to.name} に所属している
 
 承認: 必ず実行待ち
-
-## 件数
-
-| 型 | 件数 |
-|---|---|
-| ApprovalAuthority | 4 |
-| Department | 4 |
-| InternalSystem | 2 |
-| Person | 4 |
 

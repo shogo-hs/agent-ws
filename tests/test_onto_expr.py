@@ -240,5 +240,22 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertEqual(expr.compile_expr("count(x)").eval({"x": None}), 0)
 
 
+class UnaryAndSingleEntityIterationTest(unittest.TestCase):
+    """レビューで足した決め: 単項 - の TypeError と、1 件のリンクを for で回すことの許容（X-5）。"""
+
+    def test_unary_minus_type_error_becomes_exprerror(self) -> None:
+        with self.assertRaises(ExprError):
+            expr.compile_expr("-x").eval({"x": "a"})
+
+    def test_comprehension_over_single_entity_face(self) -> None:
+        approver = FakeEntity("Estimate", kind="estimate")
+        e = expr.compile_expr("any(a.kind == 'estimate' for a in approver)", allowed_names={"approver"})
+        self.assertTrue(e.eval({"approver": approver}))
+
+    def test_comprehension_over_non_iterable_is_exprerror(self) -> None:
+        with self.assertRaises(ExprError):
+            expr.compile_expr("any(a for a in n)", allowed_names={"n"}).eval({"n": 5})
+
+
 if __name__ == "__main__":
     unittest.main()

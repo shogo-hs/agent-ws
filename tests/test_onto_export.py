@@ -112,6 +112,14 @@ class MarkdownTest(unittest.TestCase):
         self.assertIn("に見積の決裁権限が無い", md)
         self.assertIn("契約月数は", md)
 
+    def test_no_counts_section_even_with_objects(self):
+        # 件数は onto act の実行のたびに古くなるので index.md には載せない（onto types / query で見る）
+        sch = _load_project()
+        objects = {"Decision": {"d1": {"title": "x", "status": "active"}}}
+        md = export.to_markdown(sch, objects=objects)
+        self.assertNotIn("## 件数", md)
+        self.assertTrue(md.startswith("件数と中身は"))
+
 
 class EscapingTest(unittest.TestCase):
     def test_string_escaping_does_not_break_turtle(self):

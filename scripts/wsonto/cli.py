@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -28,6 +29,9 @@ from .validate import validate
 _STATUS_CODE = {"committed": 0, "staged": 3, "rejected": 4}
 _HUMAN_ONLY_MSG = "承認・却下・取り込みは人だけができる（エージェントからは実行できない）。人に「承認 P-0001」と送ってもらう"
 _PROMPT_RE = re.compile(r"^\s*(承認|却下|approve|reject)\s+((?:[\w-]+/)?[PS]-\d{4})(?:\s+(.+))?$")
+# eval/doctor が答えたい質問を評価するときの実行者は固定（誰が叩いても結果が変わらないように。
+# ここでの actor は評価専用で、記録には残らない＝engine.Actor の他の使いどころとは独立）
+_EVAL_ACTOR = engine.Actor("agent", "eval")
 
 
 @dataclass
@@ -246,7 +250,7 @@ def _cmd_init(args, ctx: Ctx) -> int:
     if common_dir is not None and (common_dir / "ontology.json").exists():
         common_schema = load_schema(common_dir)
     sch = parse_schema(doc, common=common_schema, source=str(onto_path))
-    govern.write_index_md(dir_, sch, None)
+    govern.write_index_md(dir_, sch)
     print(f"作成: {onto_path}")
     return 0
 
@@ -528,7 +532,7 @@ def _cmd_eval(args, ctx: Ctx) -> int:
         print("questions.json が無い")
         return 0
     doc = json.loads(qpath.read_text(encoding="utf-8"))
-    results = evals.run_questions(st, doc, _actor_for(ctx))
+    results = evals.run_questions(st, doc, _EVAL_ACTOR)
     ok = 0
     for r in results:
         if r.ok:
@@ -703,6 +707,14 @@ def main(argv: list, ctx: Ctx) -> int:
     except OntoError as e:
         print(f"ws: {e}", file=sys.stderr)
         return 1
+    except Exception as e:  # noqa: BLE001 -- スタックトレースを見せない。原因は WS_DEBUG=1 で
+        if os.environ.get("WS_DEBUG") == "1":
+            traceback.print_exc()
+        print(
+            f"ws: 内部エラー（{type(e).__name__}: {e}）。定義か実体が想定外の形。scripts/ws onto validate で確かめる",
+            file=sys.stderr,
+        )
+        return 1
 
 
 # --- UserPromptSubmit からの承認・却下 ---------------------------------------
@@ -770,48 +782,64 @@ def doctor_problems(ctx: Ctx) -> list:
         except OntoError as e:
             problems.append(f"{label}: {e}")
             continue
+        except Exception as e:  # noqa: BLE001 -- 1 範囲の想定外の壊れ方で doctor 全体を落とさない
+            problems.append(f"{label}: 定義の読み込み で内部エラー（{type(e).__name__}: {e}）")
+            continue
 
-        for v in validate(st):
-            problems.append(f"{label}: {v.ref} {v.path} {v.code} {v.message}")
-        for f in lint_mod.lint(sch, st.doc):
-            if f.level == "warn":
-                problems.append(f"{label}: lint {f.code} {f.where} {f.message}")
+        try:
+            for v in validate(st):
+                problems.append(f"{label}: {v.ref} {v.path} {v.code} {v.message}")
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"{label}: validate で内部エラー（{type(e).__name__}: {e}）")
 
-        pdir = dir_ / "proposals"
-        if pdir.exists():
-            now = datetime.datetime.now(datetime.timezone.utc)
-            for pf in sorted(pdir.glob("*.json")):
-                try:
-                    doc = json.loads(pf.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                if not isinstance(doc, dict) or doc.get("status") != "open":
-                    continue
-                created = doc.get("created")
-                if not created:
-                    continue
-                try:
-                    created_dt = datetime.datetime.fromisoformat(created)
-                except ValueError:
-                    continue
-                if created_dt.tzinfo is None:
-                    created_dt = created_dt.replace(tzinfo=datetime.timezone.utc)
-                age_days = (now - created_dt).days
-                if age_days > 7:
-                    problems.append(f"{label}: 実行待ち {doc.get('id')} が {age_days} 日 open のまま")
+        try:
+            for f in lint_mod.lint(sch, st.doc):
+                if f.level == "warn":
+                    problems.append(f"{label}: lint {f.code} {f.where} {f.message}")
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"{label}: lint で内部エラー（{type(e).__name__}: {e}）")
+
+        try:
+            pdir = dir_ / "proposals"
+            if pdir.exists():
+                now = datetime.datetime.now(datetime.timezone.utc)
+                for pf in sorted(pdir.glob("*.json")):
+                    try:
+                        doc = json.loads(pf.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    if not isinstance(doc, dict) or doc.get("status") != "open":
+                        continue
+                    created = doc.get("created")
+                    if not created:
+                        continue
+                    try:
+                        created_dt = datetime.datetime.fromisoformat(created)
+                    except ValueError:
+                        continue
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=datetime.timezone.utc)
+                    age_days = (now - created_dt).days
+                    if age_days > 7:
+                        problems.append(f"{label}: 実行待ち {doc.get('id')} が {age_days} 日 open のまま")
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"{label}: 実行待ち で内部エラー（{type(e).__name__}: {e}）")
 
         qpath = dir_ / "questions.json"
         if qpath.exists():
             try:
                 qdoc = json.loads(qpath.read_text(encoding="utf-8"))
-                for r in evals.run_questions(st, qdoc, _actor_for(ctx)):
+                for r in evals.run_questions(st, qdoc, _EVAL_ACTOR):
                     if not r.ok:
                         problems.append(f"{label}: eval {r.id} 失敗 {r.detail}")
             except Exception as e:  # noqa: BLE001 -- doctor は落とさない
-                problems.append(f"{label}: questions.json の評価に失敗した（{e}）")
+                problems.append(f"{label}: 評価 で内部エラー（{type(e).__name__}: {e}）")
 
-        for line in engine.verify_chain(st):
-            problems.append(f"{label}: {line}")
+        try:
+            for line in engine.verify_chain(st):
+                problems.append(f"{label}: {line}")
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"{label}: ハッシュの鎖 で内部エラー（{type(e).__name__}: {e}）")
 
     return problems
 

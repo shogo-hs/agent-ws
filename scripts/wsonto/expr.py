@@ -11,7 +11,7 @@ import datetime
 from collections.abc import Mapping
 from typing import Any, Callable
 
-from .errors import ExprError
+from .errors import ExprError, HiddenPropertyError
 
 _MAX_ITERATIONS = 100_000
 _MAX_SRC = 2_000
@@ -287,7 +287,10 @@ def _eval(node: ast.AST, env: Mapping, bound: dict, counter: list, src: str) -> 
         value = _eval(node.operand, env, bound, counter, src)
         if isinstance(node.op, ast.Not):
             return not value
-        return -value
+        try:
+            return -value
+        except TypeError as e:
+            raise ExprError(f"式 {src!r} の単項 - の評価に失敗しました（{e}）") from e
     if isinstance(node, ast.BinOp):
         left = _eval(node.left, env, bound, counter, src)
         right = _eval(node.right, env, bound, counter, src)
@@ -343,6 +346,8 @@ def _attr_get(obj: Any, name: str, src: str) -> Any:
     if callable(onto_get):
         try:
             return onto_get(name)
+        except HiddenPropertyError:
+            raise ExprError(f"{name} は照会に使えない（非表示のプロパティ）") from None
         except KeyError:
             type_name = getattr(obj, "type", None) or type(obj).__name__
             raise ExprError(f"式 {src!r}: {type_name} に {name} は無い") from None
@@ -424,6 +429,14 @@ def _eval_comprehension(node: ast.AST, env: Mapping, bound: dict, counter: list,
         iterable = _eval(gen.iter, env, local_bound, counter, src)
         if iterable is None:
             iterable = []
+        elif isinstance(iterable, (list, tuple)):
+            pass
+        elif hasattr(iterable, "onto_get"):
+            iterable = [iterable]  # 1 件のリンク（リストでない実体）も回せるようにする
+        else:
+            raise ExprError(
+                f"式 {src!r} の for は反復できない値に使われています（{type(iterable).__name__}）"
+            )
         for item in iterable:
             counter[0] += 1
             if counter[0] > _MAX_ITERATIONS:

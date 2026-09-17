@@ -114,11 +114,19 @@ class IssueEstimateTest(OntoCaseTest):
         self.assertEqual(result.status, "rejected")
         self.assertEqual(len(result.messages), 3)
 
-    def test_human_direct_action_commits_without_staging(self) -> None:
+    def test_human_direct_action_still_stages_when_approval_required(self) -> None:
+        # 人が直接 act しても、承認の要否（stage_if）はそのまま評価される。
+        # 承認そのものは相変わらず人だけができる。
         result = engine.act(
             self.project_store, "IssueEstimate", _base_estimate_params(months="24"), HUMAN, today=TODAY,
         )
-        self.assertEqual(result.status, "committed")
+        self.assertEqual(result.status, "staged")
+        self.assertIsNotNone(result.proposal_id)
+        self.project_store.reload()
+        self.assertNotIn("E-1", self.project_store.doc.get("Estimate", {}))
+
+        approved = engine.approve(self.project_store, result.proposal_id, HUMAN, today=TODAY)
+        self.assertEqual(approved.status, "committed")
         est = self.project_store.get("Estimate:E-1")
         self.assertIsNotNone(est)
 
@@ -477,6 +485,253 @@ class RunQuestionsTest(OntoCaseTest):
 
         self.assertEqual((self.project_dir / "objects.json").read_bytes(), before_objects)
         self.assertEqual(log_path.exists(), log_existed_before)
+
+
+# --- ④ 検証は写し全体を見る（X-1） -------------------------------------------
+
+
+class WholeStoreValidateTest(unittest.TestCase):
+    """delete / unlink で宙に浮いたリンクが検査されず反映されてしまわないこと。"""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        doc = {
+            "ontology": "x1-test", "version": 1,
+            "object_types": {
+                "Task": {
+                    "label": "Task", "summary": ["title"],
+                    "properties": {"title": {"type": "string", "required": True, "label": "Title"}},
+                },
+                "Note": {
+                    "label": "Note", "summary": ["title"],
+                    "properties": {"title": {"type": "string", "required": True, "label": "Title"}},
+                },
+                "Log": {
+                    "label": "Log", "summary": ["title"],
+                    "properties": {"title": {"type": "string", "required": True, "label": "Title"}},
+                },
+            },
+            "link_types": {
+                "about": {
+                    "label": "about", "from": "Note", "to": "Task", "min": 1,
+                    "inverse": "notes", "inverse_label": "notes", "inverse_min": 1,
+                },
+            },
+            "action_types": {
+                "DeleteTask": {
+                    "label": "Delete task",
+                    "description": "テスト用: task を削除する（宙に浮いたリンクの検査を確かめる）。",
+                    "parameters": {"task": {"object_type": "Task", "required": True, "label": "Task"}},
+                    "rules": [{"delete": "task"}],
+                    "approval": "auto",
+                },
+                "UnlinkNote": {
+                    "label": "Unlink note",
+                    "description": "テスト用: note の about を外す（inverse_min の検査を確かめる）。",
+                    "parameters": {"note": {"object_type": "Note", "required": True, "label": "Note"}},
+                    "rules": [{"modify": "note", "unlink": {"about": "note.about"}}],
+                    "approval": "auto",
+                },
+                "AddLog": {
+                    "label": "Add log",
+                    "description": "テスト用: 無関係な正当なアクション（既存の違反があっても通ることを確かめる）。",
+                    "parameters": {"title": {"type": "string", "required": True, "label": "Title"}},
+                    "rules": [{"create": "Log", "as": "l", "id": "L-{seq}", "set": {"title": "title"}}],
+                    "approval": "auto", "returns": "l",
+                },
+            },
+        }
+        self.schema = schema.parse_schema(doc)
+        (self.dir / "objects.json").write_text(json.dumps({
+            "_meta": {"seq": {}},
+            "Task": {"t1": {"title": "Task 1"}},
+            "Note": {
+                "n1": {"title": "Note 1", "_links": {"about": ["Task:t1"]}},
+                # 実行前から在る無関係な違反（先の無いリンク）。
+                "n2": {"title": "Note 2", "_links": {"about": ["Task:ghost"]}},
+            },
+        }, ensure_ascii=False), encoding="utf-8")
+        self.store = store.Store(self.dir, self.schema)
+
+    def test_delete_leaves_dangling_link_and_is_rejected(self) -> None:
+        result = engine.act(self.store, "DeleteTask", {"task": "t1"}, AGENT, today=TODAY)
+        self.assertEqual(result.status, "rejected")
+        self.assertTrue(
+            any("about" in m and "Task:t1" in m and "見つからない" in m for m in result.messages),
+            result.messages,
+        )
+        after = json.loads((self.dir / "objects.json").read_text(encoding="utf-8"))
+        self.assertIn("t1", after["Task"])
+
+    def test_unlink_breaks_inverse_min_and_is_rejected(self) -> None:
+        result = engine.act(self.store, "UnlinkNote", {"note": "n1"}, AGENT, today=TODAY)
+        self.assertEqual(result.status, "rejected")
+        after = json.loads((self.dir / "objects.json").read_text(encoding="utf-8"))
+        self.assertEqual(after["Note"]["n1"].get("_links", {}).get("about"), ["Task:t1"])
+
+    def test_preexisting_unrelated_violation_does_not_block_valid_action(self) -> None:
+        result = engine.act(self.store, "AddLog", {"title": "新しい仕事"}, AGENT, today=TODAY)
+        self.assertEqual(result.status, "committed")
+
+
+# --- 案件のアクションは共通の実体を modify / delete できない（X-3） -----------
+
+
+class CommonEntityProtectionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        self.common_dir = base / "common"
+        self.project_dir = base / "project"
+        self.common_dir.mkdir()
+        self.project_dir.mkdir()
+
+        common_doc = {
+            "ontology": "common-x3", "version": 1,
+            "object_types": {
+                "Person": {
+                    "label": "Person", "summary": ["name"],
+                    "properties": {"name": {"type": "string", "required": True, "label": "Name"}},
+                },
+            },
+        }
+        (self.common_dir / "ontology.json").write_text(
+            json.dumps(common_doc, ensure_ascii=False), encoding="utf-8",
+        )
+        (self.common_dir / "objects.json").write_text(
+            json.dumps({"_meta": {"seq": {}}, "Person": {"sato": {"name": "Sato"}}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self._orig_common_objects = (self.common_dir / "objects.json").read_bytes()
+
+        project_doc = {
+            "ontology": "project-x3", "version": 1,
+            "action_types": {
+                "RenamePerson": {
+                    "label": "Rename person",
+                    "description": "テスト用: 案件のアクションから共通の Person を modify しようとする。",
+                    "parameters": {
+                        "person": {"object_type": "Person", "required": True, "label": "Person"},
+                        "name": {"type": "string", "required": True, "label": "Name"},
+                    },
+                    "rules": [{"modify": "person", "set": {"name": "name"}}],
+                    "approval": "auto",
+                },
+            },
+        }
+        (self.project_dir / "ontology.json").write_text(
+            json.dumps(project_doc, ensure_ascii=False), encoding="utf-8",
+        )
+        (self.project_dir / "objects.json").write_text(
+            json.dumps({"_meta": {"seq": {}}}, ensure_ascii=False), encoding="utf-8",
+        )
+
+        self.common_schema = schema.load_schema(self.common_dir)
+        self.project_schema = schema.load_schema(self.project_dir, common_dir=self.common_dir)
+        self.common_store = store.Store(self.common_dir, self.common_schema)
+        self.project_store = store.Store(self.project_dir, self.project_schema, common=self.common_store)
+
+    def test_modify_common_entity_is_rejected(self) -> None:
+        result = engine.act(
+            self.project_store, "RenamePerson", {"person": "sato", "name": "Suzuki"}, AGENT, today=TODAY,
+        )
+        self.assertEqual(result.status, "rejected")
+        self.assertTrue(any("共通" in m and "Person:sato" in m for m in result.messages), result.messages)
+        self.assertEqual((self.common_dir / "objects.json").read_bytes(), self._orig_common_objects)
+
+        entries = engine.read_log(self.project_dir)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["status"], "rejected")
+
+
+class InternalErrorSafetyNetTest(OntoCaseTest):
+    """ルールの評価などで想定外の例外が出ても、スタックトレースで落とさず rejected で記録する。"""
+
+    def test_unexpected_exception_in_rule_is_rejected_not_crashed(self) -> None:
+        class _BrokenExpr:
+            def eval(self, env):
+                raise KeyError("boom")
+
+        at = self.project_store.schema.action_types["AddActionItem"]
+        original = at.rules[0]["set"]["title"]
+        at.rules[0]["set"]["title"] = _BrokenExpr()
+        try:
+            result = engine.act(
+                self.project_store, "AddActionItem",
+                {"title": "資料を送る", "owner": "yamada"}, AGENT, today=TODAY,
+            )
+        finally:
+            at.rules[0]["set"]["title"] = original
+
+        self.assertEqual(result.status, "rejected")
+        self.assertTrue(any("内部エラー" in m and "KeyError" in m for m in result.messages), result.messages)
+        entries = engine.read_log(self.project_dir)
+        self.assertEqual(entries[-1]["status"], "rejected")
+
+
+# --- エンジンの前提条件は非表示のプロパティも読める（X-4） --------------------
+
+
+class CriteriaCanReadHiddenPropertyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        doc = {
+            "ontology": "x4-test", "version": 1,
+            "object_types": {
+                "Person": {
+                    "label": "Person", "summary": ["name"],
+                    "properties": {
+                        "name": {"type": "string", "required": True, "label": "Name"},
+                        "secret_code": {"type": "string", "label": "Code", "agent_visible": False},
+                    },
+                },
+            },
+            "action_types": {
+                "CheckCode": {
+                    "label": "Check code",
+                    "description": "テスト用: 非表示のプロパティを前提条件で読む。",
+                    "parameters": {"person": {"object_type": "Person", "required": True, "label": "Person"}},
+                    "criteria": [
+                        {"when": "person.secret_code == 'abc'", "message": "コードが違う"},
+                    ],
+                    "approval": "auto",
+                },
+            },
+        }
+        self.schema = schema.parse_schema(doc)
+        (self.dir / "objects.json").write_text(json.dumps({
+            "_meta": {"seq": {}},
+            "Person": {"p1": {"name": "Taro", "secret_code": "abc"}},
+        }, ensure_ascii=False), encoding="utf-8")
+        self.store = store.Store(self.dir, self.schema)
+
+    def test_criterion_reads_hidden_property_directly(self) -> None:
+        result = engine.act(self.store, "CheckCode", {"person": "p1"}, AGENT, today=TODAY)
+        self.assertEqual(result.status, "committed")
+
+
+# --- 壊れた記録の行があっても落ちない（X-6） ----------------------------------
+
+
+class BrokenLogLineTest(OntoCaseTest):
+    def test_merge_conflict_marker_line_is_skipped_not_crashed(self) -> None:
+        engine.act(self.project_store, "IssueEstimate", _base_estimate_params(), AGENT, today=TODAY)
+        log_path = self.project_dir / "log.jsonl"
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write("<<<<<<< HEAD\n")
+
+        entries = engine.read_log(self.project_dir)
+        self.assertEqual(len(entries), 1)  # 壊れた行は飛ばす
+
+        issues = engine.verify_chain(self.project_store)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("2 行目", issues[0])
+        self.assertIn("読めない", issues[0])
 
 
 if __name__ == "__main__":

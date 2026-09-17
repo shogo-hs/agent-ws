@@ -77,6 +77,24 @@ def act(
         )
 
 
+def _new_violations(before: list, after: list) -> list:
+    """`after` にあって `before` には無かった違反だけを返す。同一性は (ref, path, code)。
+
+    実行前から在る無関係な違反（人が手で入れたものなど）では止めない。
+    """
+    remaining = list(before)
+    new: list = []
+    for v in after:
+        key = (v.ref, v.path, v.code)
+        for i, b in enumerate(remaining):
+            if (b.ref, b.path, b.code) == key:
+                del remaining[i]
+                break
+        else:
+            new.append(v)
+    return new
+
+
 def _run_action(
     store: Store, snap: Store, action_name: str, raw_params: dict, actor: Actor,
     *, why: str, today: Optional[datetime.date], task: Optional[str],
@@ -97,46 +115,46 @@ def _run_action(
             proposal_id=None, returned=None, next_text="", dry_run=dry_run, kind="act",
         )
 
-    # --- ① 引数を直す ---
-    params, problems = _coerce_params(at, raw_params, snap)
-    if problems:
-        return rejected(problems)
-
-    env: dict = dict(params)
-    env.update(schema_obj.constants)
-    env["actor"] = actor.as_env()
-    env["__today__"] = today
-
-    # --- ② 前提条件 ---
-    crit_messages = []
-    for c in at.criteria:
-        try:
-            ok = bool(c.when.eval(env)) if c.when is not None else True
-        except ExprError:
-            ok = False
-        if not ok:
-            crit_messages.append(render(c.message, env))
-    if crit_messages:
-        return rejected(crit_messages)
-
-    # --- ③ ルールを snap に適用 ---
-    edits: list = []
-    touched: set = set()
     try:
-        _apply_rules(at.rules, snap, env, touched, edits)
-    except OntoError as e:
-        return rejected([str(e)], edits=edits)
+        # --- ① 引数を直す ---
+        params, problems = _coerce_params(at, raw_params, snap)
+        if problems:
+            return rejected(problems)
 
-    # --- ④ 検証 ---
-    violations = validate(snap, refs=list(touched))
-    if violations:
-        return rejected([v.message for v in violations], violations=violations, edits=edits)
+        env: dict = dict(params)
+        env.update(schema_obj.constants)
+        env["actor"] = actor.as_env()
+        env["__today__"] = today
 
-    # --- ⑤ 承認の要否 ---
-    approval_role = at.approval.role if at.approval else None
-    if actor.kind == "human":
-        needs_approval = False
-    else:
+        # --- ② 前提条件 ---
+        crit_messages = []
+        for c in at.criteria:
+            try:
+                ok = bool(c.when.eval(env)) if c.when is not None else True
+            except ExprError:
+                ok = False
+            if not ok:
+                crit_messages.append(render(c.message, env))
+        if crit_messages:
+            return rejected(crit_messages)
+
+        # --- ③ ルールを snap に適用 ---
+        edits: list = []
+        touched: set = set()
+        try:
+            _apply_rules(at.rules, snap, env, touched, edits)
+        except OntoError as e:
+            return rejected([str(e)], edits=edits)
+
+        # --- ④ 検証（写し全体。実行前の store 全体の validate には無かった違反だけを見る） ---
+        before_violations = validate(store)
+        after_violations = validate(snap)
+        new_violations = _new_violations(before_violations, after_violations)
+        if new_violations:
+            return rejected([v.message for v in new_violations], violations=new_violations, edits=edits)
+
+        # --- ⑤ 承認の要否（人が直接 act しても要る。承認そのものは人だけができる） ---
+        approval_role = at.approval.role if at.approval else None
         mode = at.approval.mode if at.approval is not None else "stage"
         if mode == "auto":
             needs_approval = False
@@ -146,12 +164,16 @@ def _run_action(
             when = at.approval.when if at.approval is not None else None
             needs_approval = bool(when.eval(env)) if when is not None else True
 
-    returned_ref = None
-    if at.returns:
-        obj = env.get(at.returns)
-        if isinstance(obj, ObjView):
-            returned_ref = obj.ref
-    next_text = render(at.next, env) if at.next else ""
+        returned_ref = None
+        if at.returns:
+            obj = env.get(at.returns)
+            if isinstance(obj, ObjView):
+                returned_ref = obj.ref
+        next_text = render(at.next, env) if at.next else ""
+    except OntoError:
+        raise
+    except Exception as e:  # noqa: BLE001 -- アクションの定義か実体が想定外の形でも記録を残して拒否する
+        return rejected([f"内部エラー: {type(e).__name__}: {e}（アクションの定義か実体が想定外の形）"])
 
     # --- ⑥ 反映 or 実行待ち ---
     if needs_approval:
@@ -423,11 +445,19 @@ def _apply_create(rule: dict, snap: Store, env: dict, touched: set, edits: list)
     env[as_name] = snap.get(ref)
 
 
+def _is_foreign(snap: Store, type_name: str, id_: str) -> bool:
+    """target が自分の store に無い（共通の store から引いた）実体かどうか。"""
+    entities = snap.doc.get(type_name)
+    return not (entities and id_ in entities)
+
+
 def _apply_modify(rule: dict, snap: Store, env: dict, touched: set, edits: list) -> None:
     target_name = rule["modify"]
     target = env.get(target_name)
     if target is None:
         return
+    if _is_foreign(snap, target.type, target.id):
+        raise OntoError(f"共通（自社）の実体 '{target.ref}' は、案件のアクションからは変えられない。共通のアクションを使う")
     ref = target.ref
     rec = snap.doc[target.type][target.id]
     before = copy.deepcopy(rec)
@@ -484,6 +514,8 @@ def _apply_delete(rule: dict, snap: Store, env: dict, touched: set, edits: list)
     target = env.get(target_name)
     if target is None:
         return
+    if _is_foreign(snap, target.type, target.id):
+        raise OntoError(f"共通（自社）の実体 '{target.ref}' は、案件のアクションからは変えられない。共通のアクションを使う")
     ref = target.ref
     before = copy.deepcopy(snap.doc[target.type][target.id])
     snap.remove(ref)
@@ -645,43 +677,50 @@ def approve(store: Store, proposal_id: str, approver: Actor, *, today: Optional[
         if at is None:
             return rejected([f"アクション '{action_name}' は定義に無い"])
 
-        params, problems = _coerce_params(at, raw_params, snap)
-        if problems:
-            return rejected(problems)
-
-        env: dict = dict(params)
-        env.update(schema_obj.constants)
-        env["actor"] = original_actor.as_env()
-        env["__today__"] = today
-
-        crit_messages = []
-        for c in at.criteria:
-            try:
-                ok = bool(c.when.eval(env)) if c.when is not None else True
-            except ExprError:
-                ok = False
-            if not ok:
-                crit_messages.append(render(c.message, env))
-        if crit_messages:
-            return rejected(crit_messages)
-
-        edits: list = []
-        touched: set = set()
         try:
-            _apply_rules(at.rules, snap, env, touched, edits)
-        except OntoError as e:
-            return rejected([str(e)], edits=edits)
+            params, problems = _coerce_params(at, raw_params, snap)
+            if problems:
+                return rejected(problems)
 
-        violations = validate(snap, refs=list(touched))
-        if violations:
-            return rejected([v.message for v in violations], violations=violations, edits=edits)
+            env: dict = dict(params)
+            env.update(schema_obj.constants)
+            env["actor"] = original_actor.as_env()
+            env["__today__"] = today
 
-        returned_ref = None
-        if at.returns:
-            obj = env.get(at.returns)
-            if isinstance(obj, ObjView):
-                returned_ref = obj.ref
-        next_text = render(at.next, env) if at.next else ""
+            crit_messages = []
+            for c in at.criteria:
+                try:
+                    ok = bool(c.when.eval(env)) if c.when is not None else True
+                except ExprError:
+                    ok = False
+                if not ok:
+                    crit_messages.append(render(c.message, env))
+            if crit_messages:
+                return rejected(crit_messages)
+
+            edits: list = []
+            touched: set = set()
+            try:
+                _apply_rules(at.rules, snap, env, touched, edits)
+            except OntoError as e:
+                return rejected([str(e)], edits=edits)
+
+            before_violations = validate(store)
+            after_violations = validate(snap)
+            new_violations = _new_violations(before_violations, after_violations)
+            if new_violations:
+                return rejected([v.message for v in new_violations], violations=new_violations, edits=edits)
+
+            returned_ref = None
+            if at.returns:
+                obj = env.get(at.returns)
+                if isinstance(obj, ObjView):
+                    returned_ref = obj.ref
+            next_text = render(at.next, env) if at.next else ""
+        except OntoError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- アクションの定義か実体が想定外の形でも記録を残して拒否する
+            return rejected([f"内部エラー: {type(e).__name__}: {e}（アクションの定義か実体が想定外の形）"])
 
         new_hash = snap.commit(lock=False)
         store.reload()
@@ -749,19 +788,34 @@ def proposals(store: Store, status: Optional[str] = "open") -> list:
 # --- 記録の読み出し・検証 ----------------------------------------------------
 
 
+def _read_log_lines(dir: Path) -> "tuple[list, list]":
+    """log.jsonl を読み、読めた行の dict と、JSON として読めなかった行番号（1 始まり）を返す。
+
+    壊れた行（git のマージの衝突マーカーなど）が 1 つあっても、他の行は読めた分だけ返す。
+    """
+    path = Path(dir) / "log.jsonl"
+    if not path.exists():
+        return [], []
+    entries: list = []
+    bad_lines: list = []
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            bad_lines.append(i)
+    return entries, bad_lines
+
+
 def read_log(
     dir: Path, action: Optional[str] = None, object: Optional[str] = None,
     since: Optional[str] = None, limit: Optional[int] = None,
 ) -> list:
-    path = Path(dir) / "log.jsonl"
-    if not path.exists():
-        return []
+    entries, _bad_lines = _read_log_lines(dir)
     out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        entry = json.loads(line)
+    for entry in entries:
         if action is not None and entry.get("action") != action:
             continue
         if object is not None and not _entry_mentions(entry, object):
@@ -793,27 +847,24 @@ def _entry_mentions(entry: dict, ref: str) -> bool:
 
 
 def verify_chain(store: Store) -> list:
-    path = Path(store.dir) / "log.jsonl"
-    if not path.exists():
-        return []
+    entries, bad_lines = _read_log_lines(store.dir)
+    issues: list = [
+        f"log.jsonl の {n} 行目が JSON として読めない（マージの衝突の跡なら手で直す）"
+        for n in bad_lines
+    ]
     last_hash = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        entry = json.loads(line)
+    for entry in entries:
         h = entry.get("store_hash_after")
         if h:
             last_hash = h
-    if last_hash is None:
-        return []
-    current = store.file_hash()
-    if current != last_hash:
-        return [
-            "objects.json が記録に無い形で書き換えられている。人が直したなら "
-            f"scripts/ws onto adopt で取り込む（記録の store_hash_after={last_hash!r}、今の file_hash={current!r}）"
-        ]
-    return []
+    if last_hash is not None:
+        current = store.file_hash()
+        if current != last_hash:
+            issues.append(
+                "objects.json が記録に無い形で書き換えられている。人が直したなら "
+                f"scripts/ws onto adopt で取り込む（記録の store_hash_after={last_hash!r}、今の file_hash={current!r}）"
+            )
+    return issues
 
 
 def adopt(store: Store, actor: Actor, note: str) -> None:
