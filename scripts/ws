@@ -758,6 +758,11 @@ _ONTO_READONLY_VERBS = {"cat", "head", "tail", "less", "wc", "ls", "grep", "rg",
 _ONTO_READONLY_PAIRS = {("git", "diff"), ("git", "log"), ("git", "status")}
 _ONTO_STATE_MSG = ("[agent-ws] knowledges/ontology/ の実体・記録・実行待ちは直接読み書きしない。"
                     "読むのは scripts/ws onto query / show / log、変えるのは scripts/ws onto act。")
+_ONTO_DIR_RE = re.compile(r"knowledges/ontology(?![\w-])")  # 末尾の / が無い形（cd knowledges/ontology）も拾う
+_ONTO_STATE_NAME_RE = re.compile(r"(?<![\w.-])(?:objects\.json|log\.jsonl|proposals|\.lock)(?![\w-])")
+_ONTO_CD_RE = re.compile(r"(?:^|[;&|\n])\s*(?:cd|pushd)\s+\S*knowledges/ontology(?![\w-])")
+_ONTO_INSIDE_MSG = ("[agent-ws] knowledges/ontology/ の中を作業ディレクトリにしない（相対パスで実体に触れてしまう）。"
+                    "cd でリポジトリのルートに戻ってから、scripts/ws onto query / show / act を使う。")
 _ONTO_DEFINE_MSG = ("[agent-ws] knowledges/ontology/ の定義は直接編集しない。"
                      "scripts/ws onto define apply <patch.json> で変える。")
 _ONTO_APPROVE_MSG = ("[agent-ws] 承認・却下・取り込みは人だけができる（エージェントの Bash からは実行できない）。"
@@ -806,7 +811,7 @@ def _onto_cmd_readonly(cmd: str) -> bool:
     return True
 
 
-def _onto_guard(tool: str, tool_input: dict, blob: str) -> str | None:
+def _onto_guard(tool: str, tool_input: dict, blob: str, cwd: str = "") -> str | None:
     """PreToolUse: knowledges/ontology/ の実体・記録・実行待ち・定義をエージェントに直接読み書き
     させない。承認・却下・取り込みは人だけ。拒否の理由を返す（無ければ None）。現在のタスクの
     有無に関係なく効く。blob・command はどちらも Windows のバックスラッシュを / に揃えてから見る
@@ -820,6 +825,11 @@ def _onto_guard(tool: str, tool_input: dict, blob: str) -> str | None:
             return _ONTO_APPROVE_MSG  # 承認・却下・取り込みは人だけ（保守用の WS_ONTO_MAINT でも止めない）
     if maint:
         return None
+    # 作業ディレクトリがオントロジーの中だと、パスを書かずに objects.json や Grep で実体に触れられる。
+    # 中に居る間は「cd で出る」以外を止める（Bash の cd はセッションに残るので、cd そのものも下で止める）
+    if re.search(r"/knowledges/ontology(?:/|$)", str(cwd).replace("\\", "/")):
+        if not (tool in ("Bash", "PowerShell", "shell") and re.fullmatch(r"\s*(?:cd|popd)(?:\s+\S+)?\s*", cmd)):
+            return _ONTO_INSIDE_MSG
     if _ONTO_STATE_RE.search(blob):
         return _ONTO_STATE_MSG
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
@@ -832,7 +842,11 @@ def _onto_guard(tool: str, tool_input: dict, blob: str) -> str | None:
             return _ONTO_DEFINE_MSG
     # scripts/ws onto … は knowledges/ontology/ のパスを引数に取らない（範囲は --common / --project で選ぶ）ので、
     # 「ws onto を含むコマンドは通す」という例外は置かない（ws onto types; sed -i … の相乗りを通さないため）
-    if tool in ("Bash", "PowerShell", "shell") and "knowledges/ontology/" in cmd:
+    if tool in ("Bash", "PowerShell", "shell") and _ONTO_DIR_RE.search(cmd):
+        if _ONTO_CD_RE.search(cmd):
+            return _ONTO_INSIDE_MSG  # cd knowledges/ontology && cat objects.json の形。パスを付けて読めば足りる
+        if _ONTO_STATE_NAME_RE.search(cmd):
+            return _ONTO_STATE_MSG
         if not _onto_cmd_readonly(cmd):
             return _ONTO_DEFINE_MSG
     return None
@@ -1071,7 +1085,7 @@ def cmd_hook_pre_tool_use(args):
     if os.name == "nt":
         tool_input = _posix_input(tool_input)
     blob = json.dumps(tool_input, ensure_ascii=False)
-    onto_reason = _onto_guard(tool, tool_input, blob)
+    onto_reason = _onto_guard(tool, tool_input, blob, data.get("cwd") or "")
     if onto_reason:
         _deny(onto_reason)
         return

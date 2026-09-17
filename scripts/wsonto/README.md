@@ -295,6 +295,7 @@ pending_count(root: Path) -> int                        # ステータスライ�
   2. Edit / Write / MultiEdit / NotebookEdit の対象が `knowledges/ontology/` の下（`ontology.json`・`index.md`・`questions.json` を含む全部）なら拒否し、`scripts/ws onto define apply <patch.json>` に誘導する。Read は通す。Codex CLI のファイル編集は `tool_name` が `apply_patch` で、対象はパッチ本文（`tool_input.command`）の `*** Update File: <path>` / `*** Add File:` / `*** Delete File:` / `*** Move to:` の行に入る（0.153.4 の実機で記録）。これも同じ扱いで拒否する。
   3. Bash / PowerShell / shell のコマンドが `onto\s+(approve|reject|adopt)` を含む、または `claude` / `codex` の起動と `(承認|却下|approve|reject)\s+\S*[PS]-\d{4}` を同時に含むなら拒否（承認は人だけ）。
   4. Bash / PowerShell / shell のコマンドが `knowledges/ontology/` に触れていて `scripts/ws onto` の呼び出しでないとき、読むだけの語（`cat` `head` `tail` `less` `wc` `ls` `grep` `rg` `jq` `git diff` `git log` `git status`）で始まり `>` `tee` `-i` を含まないものだけ通す。
+  5. パスを書かずに実体へ触れる形も止める: コマンドの中の `cd` / `pushd` の行き先が `knowledges/ontology` なら拒否。hook の入力の `cwd` がオントロジーのディレクトリの中なら、`cd` で出る以外の全ツールを拒否（Bash の `cd` はセッションに残り、次のコマンドや Grep にはパスが現れないため）。コマンドが `knowledges/ontology` に触れていて `objects.json`・`log.jsonl`・`proposals`・`.lock` の名前がどこかに出てきたら拒否。
   - 環境変数 `WS_ONTO_MAINT=1` が **hook のプロセス**にあれば 1・2・4 を止めない（agent-ws 自体の保守用。エージェントの Bash からは hook のプロセスの環境を変えられない）。3 は常に効く。
 - UserPromptSubmit: キャッシュの判定より前に、文面が承認・却下の形なら `cli.handle_prompt` を呼び、結果を `additionalContext` の JSON で返して**その発言は通す**（エージェントが結果を見て続けられるように）。
 - `doctor`: `cli.doctor_problems` の行を足す。`transcript normalize`: `cli.alias_pairs` を用語集の対に合流（用語集が勝つ）。どちらも、オントロジーのディレクトリが 1 つも無ければ wsonto を import しない。

@@ -1149,6 +1149,23 @@ class OntoIntegrationTest(unittest.TestCase):
         elsewhere = "*** Begin Patch\n*** Update File: projects/acme/index.md\n@@\n-a\n+b\n*** End Patch"
         self.assertIsNone(self.hook("apply_patch", {"command": elsewhere}))
 
+    def test_hook_blocks_relative_access_after_cd_into_the_ontology_dir(self):
+        """パスを書かずに実体へ触れる形（先に cd する・作業ディレクトリが中に居る）を止める。"""
+        for cmd in ("cd knowledges/ontology && cat objects.json",
+                    "cd projects/acme/knowledges/ontology; echo x >> log.jsonl",
+                    "cd knowledges/ontology",
+                    "pushd projects/acme/knowledges/ontology && ls"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.hook("Bash", {"command": cmd}), "deny")
+        self.assertIsNone(self.hook("Bash", {"command": "cat knowledges/ontology/ontology.json | head -5"}))
+        inside = str(self.root / "projects" / "acme" / "knowledges" / "ontology")
+        def hook_in(tool, tool_input):
+            r = self.ws("hook", "pre-tool-use", stdin=json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": inside}))
+            return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] if r.stdout.strip() else None
+        self.assertEqual(hook_in("Bash", {"command": "cat objects.json"}), "deny")
+        self.assertEqual(hook_in("Grep", {"pattern": "sato"}), "deny")
+        self.assertIsNone(hook_in("Bash", {"command": "cd ../../../.."}))
+
 
 if __name__ == "__main__":
     unittest.main()
