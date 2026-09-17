@@ -1,0 +1,74 @@
+{
+  "ontology": "own-company",
+  "version": 1,
+  "description": "案件をまたぐ自社の事実（部署・人・決裁権限・社内システム）。内容はすべて架空。",
+  "governance": {"schema_changes": "stage"},
+  "object_types": {
+    "Department": {
+      "label": "部署",
+      "label_property": "name",
+      "summary": ["name"],
+      "properties": {
+        "name": {"type": "string", "required": true, "unique": true, "label": "名前"},
+        "mission": {"type": "text", "label": "役割"}
+      }
+    },
+    "Person": {
+      "label": "人",
+      "same_as": "schema:Person",
+      "label_property": "name",
+      "alias_property": "aliases",
+      "summary": ["name", "title"],
+      "properties": {
+        "name": {"type": "string", "required": true, "label": "名前"},
+        "title": {"type": "string", "label": "役職"},
+        "aliases": {"type": "string", "many": true, "label": "別名・誤変換"},
+        "email": {"type": "string", "label": "メール", "agent_visible": false}
+      }
+    },
+    "ApprovalAuthority": {
+      "label": "決裁権限",
+      "description": "誰が、何の種類を、いくらまで決められるか。limit_yen が無ければ上限なし。",
+      "summary": ["kind", "limit_yen"],
+      "properties": {
+        "kind": {"type": "enum", "values": ["estimate", "outsourcing", "new_project"], "required": true, "label": "種類"},
+        "limit_yen": {"type": "int", "min": 0, "label": "上限（円）"}
+      }
+    },
+    "InternalSystem": {
+      "label": "社内システム",
+      "label_property": "name",
+      "alias_property": "aliases",
+      "summary": ["name"],
+      "properties": {
+        "name": {"type": "string", "required": true, "unique": true, "label": "名前"},
+        "aliases": {"type": "string", "many": true, "label": "別名・誤変換"},
+        "purpose": {"type": "text", "label": "用途"}
+      }
+    }
+  },
+  "link_types": {
+    "parent_dept": {"label": "上位の部署", "from": "Department", "to": "Department", "max": 1, "inverse": "sub_depts", "inverse_label": "下位の部署"},
+    "belongs_to": {"label": "所属する", "from": "Person", "to": "Department", "max": 1, "inverse": "members", "inverse_label": "所属する人"},
+    "held_by": {"label": "持っている人", "from": "ApprovalAuthority", "to": "Person", "min": 1, "max": 1, "inverse": "authorities", "inverse_label": "決裁権限"},
+    "operated_by": {"label": "運用する部署", "from": "InternalSystem", "to": "Department", "max": 1, "inverse": "systems", "inverse_label": "運用しているシステム"}
+  },
+  "action_types": {
+    "TransferPerson": {
+      "label": "異動させる",
+      "description": "人の所属する部署を付け替える。組織の事実を変える操作なので、必ず実行待ちに積まれ、人の承認で反映される。",
+      "parameters": {
+        "person": {"object_type": "Person", "required": true, "label": "人"},
+        "to": {"object_type": "Department", "required": true, "label": "異動先"}
+      },
+      "criteria": [
+        {"when": "person.belongs_to is None or person.belongs_to.id != to.id", "message": "{person.name} は既に {to.name} に所属している"}
+      ],
+      "rules": [
+        {"modify": "person", "link": {"belongs_to": "to"}}
+      ],
+      "approval": "stage",
+      "next": "異動に伴って決裁権限（ApprovalAuthority）が変わるなら、それも人に確認する。"
+    }
+  }
+}

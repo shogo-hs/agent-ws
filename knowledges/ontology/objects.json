@@ -1,0 +1,30 @@
+{
+  "_meta": {"seq": {}},
+  "Department": {
+    "keiei": {"name": "経営企画室", "mission": "全社の計画・月次レビューの主催"},
+    "sales": {"name": "営業部", "mission": "案件の受注・顧客窓口"},
+    "tech": {"name": "技術部", "mission": "実装・運用・TechDesk"},
+    "soumu": {"name": "総務部", "mission": "人事・経理・KinTai"}
+  },
+  "Person": {
+    "ceo": {"name": "代表取締役", "title": "代表取締役"},
+    "sato": {"name": "佐藤花子", "title": "営業部長", "aliases": ["佐藤 花子", "サトウハナコ"], "email": "sato@example.com",
+             "_links": {"belongs_to": ["Department:sales"]}},
+    "takahashi": {"name": "高橋一郎", "title": "技術部長", "email": "takahashi@example.com",
+                  "_links": {"belongs_to": ["Department:tech"]}},
+    "suzuki": {"name": "鈴木次郎", "title": "経営企画室長",
+               "_links": {"belongs_to": ["Department:keiei"]}}
+  },
+  "ApprovalAuthority": {
+    "au-ceo-estimate": {"kind": "estimate", "_links": {"held_by": ["Person:ceo"]}},
+    "au-sato-estimate": {"kind": "estimate", "limit_yen": 5000000, "_links": {"held_by": ["Person:sato"]}},
+    "au-takahashi-outsourcing": {"kind": "outsourcing", "limit_yen": 3000000, "_links": {"held_by": ["Person:takahashi"]}},
+    "au-suzuki-new-project": {"kind": "new_project", "_links": {"held_by": ["Person:suzuki"]}}
+  },
+  "InternalSystem": {
+    "kintai": {"name": "KinTai", "aliases": ["勤怠システム", "キンタイ"], "purpose": "勤怠・工数の入力",
+               "_links": {"operated_by": ["Department:soumu"]}},
+    "techdesk": {"name": "TechDesk", "aliases": ["テックデスク", "テクデスク"], "purpose": "社内システムの問い合わせ窓口",
+                 "_links": {"operated_by": ["Department:tech"]}}
+  }
+}

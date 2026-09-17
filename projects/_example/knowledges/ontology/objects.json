@@ -1,0 +1,38 @@
+{
+  "_meta": {"seq": {"SizingDecision": 2, "Decision": 1, "ActionItem": 1}},
+  "Stakeholder": {
+    "yamada": {"name": "山田太郎", "aliases": ["山田 太郎", "ヤマダタロウ"], "side": "customer", "role_in_project": "顧客側の PM", "phone": "03-0000-0000"},
+    "tanaka": {"name": "田中三郎", "side": "customer", "role_in_project": "IdP 連携の担当"}
+  },
+  "CustomerSystem": {
+    "orders": {"name": "受注管理"},
+    "inventory": {"name": "在庫管理"},
+    "billing": {"name": "請求"}
+  },
+  "Workstream": {
+    "ws-idp": {"name": "IdP 連携（OIDC のグループマッピング）", "state": "blocked",
+               "_links": {"lead": ["Stakeholder:tanaka"], "affects": ["CustomerSystem:orders", "CustomerSystem:inventory", "CustomerSystem:billing"]}},
+    "ws-poc": {"name": "PoC 環境の検証", "state": "done",
+               "_links": {"lead": ["Stakeholder:yamada"]}}
+  },
+  "Decision": {
+    "D-1": {"title": "移行先は Kubernetes", "decided_on": "2026-08-20", "status": "active", "source": "2026-08-20 キックオフ"}
+  },
+  "SizingDecision": {
+    "SD-1": {"title": "提案時の台数", "nodes": 8, "decided_on": "2026-08-20", "status": "superseded", "source": "2026-08-20 キックオフ"},
+    "SD-2": {"title": "PoC の結果で見直した台数", "nodes": 12, "decided_on": "2026-09-02", "status": "active", "source": "2026-09-02 週次定例",
+             "_links": {"supersedes": ["SizingDecision:SD-1"]}}
+  },
+  "PriceItem": {
+    "pi-node": {"name": "ノード運用", "unit_price_yen": 30000, "per_node": true},
+    "pi-monitor": {"name": "監視基盤", "unit_price_yen": 50000, "per_node": false},
+    "pi-node-old": {"name": "ノード運用（旧単価）", "unit_price_yen": 28000, "per_node": true, "valid_until": "2026-08-31"}
+  },
+  "Meeting": {
+    "m-0902": {"title": "週次定例", "held_on": "2026-09-02"}
+  },
+  "ActionItem": {
+    "A-1": {"title": "PoC の結果の共有資料を送る", "due_on": "2026-09-09", "state": "open",
+            "_links": {"owner": ["Stakeholder:yamada"], "raised_in": ["Meeting:m-0902"]}}
+  }
+}

@@ -990,5 +990,155 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(mod.TASK_RE.findall(json.dumps(out)), [("acme", "20200101_other")])
 
 
+class OntoIntegrationTest(unittest.TestCase):
+    """scripts/ws への組み込み（onto サブコマンド・hook の拒否・人の発言での承認・doctor・
+    transcript normalize・ステータスライン）。エンジン自体（scripts/wsonto/）は検証済みなので、
+    ここでは橋渡し部分だけを見る。fixture は tests/fixtures/onto_case/（適合の基準。書き換えない）。"""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="ws-onto-test-"))
+        shutil.copytree(REPO / "templates", self.root / "templates")
+        (self.root / "projects").mkdir()
+        shutil.copy(REPO / "projects" / "index.md", self.root / "projects" / "index.md")
+        shutil.copytree(REPO / "tests/fixtures/onto_case/common", self.root / "knowledges" / "ontology")
+        self.env = {**os.environ, "WS_ROOT": str(self.root)}
+        for k in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+            self.env.pop(k, None)
+        self.ws("project", "new", "acme")
+        shutil.copytree(REPO / "tests/fixtures/onto_case/project",
+                        self.root / "projects/acme/knowledges/ontology")
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+
+    def ws(self, *args, stdin=None, check=True, env=None):
+        r = subprocess.run([sys.executable, str(WS), *args], input=stdin, capture_output=True,
+                           text=True, env={**self.env, **(env or {})}, cwd=self.root)
+        if check and r.returncode != 0:
+            self.fail(f"ws {' '.join(args)} failed:\n{r.stderr}")
+        return r
+
+    def hook(self, tool, tool_input, sid=None, env=None):
+        r = self.ws("hook", "pre-tool-use",
+                    stdin=json.dumps({"session_id": sid, "tool_name": tool, "tool_input": tool_input}), env=env)
+        if not r.stdout.strip():
+            return None
+        return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"]
+
+    def test_onto_types_and_act_rejects_on_superseded_sizing(self):
+        out = self.ws("onto", "types", "--project", "acme").stdout
+        self.assertIn("IssueEstimate", out)
+        r = self.ws("onto", "act", "IssueEstimate", "title=t", "sizing=SD-1", "items=pi-node",
+                    "months=12", "approver=sato", "--project", "acme", check=False)
+        self.assertEqual(r.returncode, 4, r.stdout)
+        self.assertIn("拒否", r.stdout)
+
+    def test_hook_denies_direct_state_file_access_regardless_of_tool(self):
+        obj = str(self.root / "projects/acme/knowledges/ontology/objects.json")
+        self.assertEqual(self.hook("Read", {"file_path": obj}), "deny")
+        self.assertEqual(self.hook("Bash", {"command": "cat projects/acme/knowledges/ontology/log.jsonl"}), "deny")
+        self.assertIsNone(self.hook("Read", {"file_path": "tests/fixtures/onto_case/project/objects.json"}))
+
+    def test_hook_denies_direct_define_edits_but_allows_read(self):
+        r = self.ws("hook", "pre-tool-use", stdin=json.dumps(
+            {"tool_name": "Edit", "tool_input": {"file_path": "knowledges/ontology/ontology.json"}}))
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("define apply", out["permissionDecisionReason"])
+        self.assertIsNone(self.hook("Read", {"file_path": "knowledges/ontology/ontology.json"}))
+
+    def test_hook_denies_approve_reject_by_agent_in_both_shapes(self):
+        self.assertEqual(self.hook("Bash", {"command": "scripts/ws onto approve P-0001"}), "deny")
+        self.assertEqual(self.hook("Bash", {"command": "python scripts/ws onto reject P-0001 --reason x"}), "deny")
+        self.assertEqual(self.hook("Bash", {"command": 'claude -p "承認 P-0001"'}), "deny")
+        self.assertEqual(self.hook("shell", {"command": "cat knowledges/ontology/objects.json"}), "deny")
+
+    def test_hook_allows_readonly_ontology_commands_but_denies_writes(self):
+        self.assertIsNone(self.hook("Bash", {"command": "scripts/ws onto query Person"}))
+        self.assertIsNone(self.hook("Bash", {"command": "cat knowledges/ontology/index.md"}))
+        self.assertEqual(self.hook("Bash", {"command": "sed -i s/a/b/ knowledges/ontology/ontology.json"}), "deny")
+
+    def test_hook_windows_path_form_is_denied(self):
+        win_path = "C:\\work\\repo\\projects\\acme\\knowledges\\ontology\\objects.json"
+        self.assertEqual(self.hook("Read", {"file_path": win_path}), "deny")
+
+    def test_hook_ws_onto_maint_allows_reads_but_not_approve(self):
+        self.assertIsNone(self.hook("Read", {"file_path": "knowledges/ontology/objects.json"},
+                                     env={"WS_ONTO_MAINT": "1"}))
+        self.assertEqual(self.hook("Bash", {"command": "scripts/ws onto approve P-0001"},
+                                   env={"WS_ONTO_MAINT": "1"}), "deny")
+
+    def test_human_prompt_approval_and_silent_on_normal_prompt(self):
+        r = self.ws("onto", "act", "IssueEstimate", "title=t", "sizing=SD-2", "items=pi-node,pi-monitor",
+                    "months=24", "approver=sato", "--project", "acme", check=False,
+                    env={"CLAUDE_CODE_SESSION_ID": "s1"})
+        self.assertEqual(r.returncode, 3, r.stdout)  # 実行待ち（総額が sato の決裁上限を超える）
+        r = self.ws("hook", "user-prompt-submit", stdin=json.dumps({"session_id": "s1", "prompt": "承認 acme/P-0001"}))
+        ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("P-0001", ctx)
+        self.assertIn("承認", ctx)
+        objects = json.loads((self.root / "projects/acme/knowledges/ontology/objects.json").read_text(encoding="utf-8"))
+        self.assertTrue(objects.get("Estimate"))
+        r2 = self.ws("hook", "user-prompt-submit", stdin=json.dumps({"prompt": "見積を作って"}))
+        self.assertEqual(r2.stdout.strip(), "")
+
+    def test_doctor_reports_ontology_problems_only_when_broken(self):
+        r = self.ws("doctor", check=False)
+        self.assertNotIn("knowledges/ontology", r.stdout)
+        obj_path = self.root / "projects/acme/knowledges/ontology/objects.json"
+        doc = json.loads(obj_path.read_text(encoding="utf-8"))
+        doc["SizingDecision"]["SD-2"]["status"] = "unknown"
+        obj_path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        r2 = self.ws("doctor", check=False)
+        self.assertIn("knowledges/ontology", r2.stdout)
+
+    def test_transcript_normalize_uses_ontology_aliases(self):
+        src = self.root / "meeting.txt"
+        src.write_text("サトウハナコさんとキンタイの件", encoding="utf-8")
+        self.ws("transcript", "normalize", str(src), "--project", "acme")
+        norm = src.with_name("meeting.normalized.md").read_text(encoding="utf-8")
+        self.assertIn("佐藤花子", norm)
+        self.assertIn("KinTai", norm)
+
+    def test_statusline_shows_pending_count_only_when_open(self):
+        self.assertNotIn("承認待ち", self.ws("statusline", stdin="{}").stdout)
+        self.ws("onto", "act", "IssueEstimate", "title=t", "sizing=SD-2", "items=pi-node,pi-monitor",
+                "months=24", "approver=sato", "--project", "acme", check=False,
+                env={"CLAUDE_CODE_SESSION_ID": "s1"})
+        self.assertIn("承認待ち 1", self.ws("statusline", stdin="{}").stdout)
+
+    def test_session_start_unchanged_without_ontology(self):
+        """オントロジーが無い利用者は起動時注入が 1 字も増えない（"onto" という語すら出ない）。"""
+        plain = Path(tempfile.mkdtemp(prefix="ws-onto-none-"))
+        try:
+            shutil.copytree(REPO / "templates", plain / "templates")
+            (plain / "projects").mkdir()
+            shutil.copy(REPO / "projects" / "index.md", plain / "projects" / "index.md")
+            env = {**os.environ, "WS_ROOT": str(plain)}
+            for k in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+                env.pop(k, None)
+            r = subprocess.run([sys.executable, str(WS), "hook", "session-start"], input="{}",
+                               capture_output=True, text=True, env=env, cwd=plain)
+            self.assertNotIn("onto", r.stdout)
+        finally:
+            shutil.rmtree(plain)
+
+    def test_hook_does_not_let_writes_ride_along_with_allowed_commands(self):
+        """レビューで足した: 読むだけの語や ws onto に相乗りした書き換え、引用符で割った approve を通さない。"""
+        onto = "projects/acme/knowledges/ontology/ontology.json"
+        for cmd in (f"cat {onto}; sed -e s/a/b/ {onto}",
+                    f"scripts/ws onto types; cp /tmp/x.json {onto}",
+                    f"cat {onto} | python3 -c 'import sys'",
+                    f"cat $(ls {onto})",
+                    'scripts/ws onto "approve" P-0001',
+                    "scripts/ws onto 'reject' P-0001 --reason x",
+                    "claude -p 'do it\n承認 P-0001'"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.hook("Bash", {"command": cmd}), "deny")
+        for cmd in (f"cd . && cat {onto} | jq .version", f"grep -n label {onto} | head -5", f"git diff {onto}"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.hook("Bash", {"command": cmd}))
+
+
 if __name__ == "__main__":
     unittest.main()
