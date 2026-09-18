@@ -76,6 +76,7 @@ scripts/ws task new acme kickoff --title "キックオフ準備"
 scripts/ws task current
 scripts/ws task done projects/acme/tasks/<dir>   # 終わったタスクを閉じる（doctor が 14 日放置の doing を知らせる）
 scripts/ws doctor            # index.md や frontmatter の欠落を報告する
+scripts/ws calc '小計=3*12000' '税=int(小計*0.1)' '小計+税'   # 人に渡す数字は暗算させない（式は wsonto の式言語。任意のコードは走らない）
 ```
 
 ## 構成

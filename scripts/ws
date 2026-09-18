@@ -964,6 +964,33 @@ def cmd_onto(args):
     sys.exit(onto_cli.main(args.rest, _onto_ctx()))
 
 
+# ---- 計算（人に渡す数字を暗算させない） ------------------------------------
+_CALC_BIND_RE = re.compile(r"^\s*([^\W\d]\w*)\s*=(?!=)(.*)$", re.S)
+
+
+def _calc_fmt(v) -> str:
+    # 有効 15 桁に丸めて 1.1*12000 → 13200.000000000002 のような 2 進小数の誤差を出さない
+    # （double が保証する精度の上限。1e15 以上の小数は指数表記になる。整数は桁数に関係なく厳密）
+    return format(v, ".15g") if isinstance(v, float) else str(v)
+
+
+def cmd_calc(args):
+    _load_onto_cli()  # sys.path に scripts/ を足す
+    from wsonto.errors import ExprError
+    from wsonto.expr import compile_expr
+    env: dict = {}
+    for item in args.exprs:
+        m = _CALC_BIND_RE.match(item)
+        name, src = (m.group(1), m.group(2).strip()) if m else (None, item.strip())
+        try:
+            value = compile_expr(src).eval(env)
+        except ExprError as e:
+            die(str(e))
+        if name:
+            env[name] = value
+        print(f"{name or src} = {_calc_fmt(value)}")
+
+
 # ---- hooks（Claude Code / Codex CLI 共通） ---------------------------------
 
 def _days_since(date_str: str) -> int | None:
@@ -1403,6 +1430,11 @@ def main(argv=None):
                        help="オントロジー（scripts/wsonto/README.md）。scripts/ws onto --help で詳細")
     o.add_argument("rest", nargs=argparse.REMAINDER)
     o.set_defaults(fn=cmd_onto)
+
+    q = sub.add_parser("calc", help="式を計算する（見積・金額・集計など人に渡す数字は暗算せずここで出す）")
+    q.add_argument("exprs", nargs="+", metavar="式",
+                   help="'3*12000' か '名前=式'。束縛した名前は後ろの式から使える。四則・// %%・比較・sum/min/max/round/abs/int/float と内包表記。round は偶数丸め（round(2.5) は 2）、切り捨ては int")
+    q.set_defaults(fn=cmd_calc)
 
     sub.add_parser("doctor", help="index.md や frontmatter の欠落を報告する").set_defaults(fn=cmd_doctor)
     sub.add_parser("statusline", help="Claude Code の statusLine（stdin に JSON）。現在のタスク・文脈の使用率・費用を 1 行で出す").set_defaults(fn=cmd_statusline)

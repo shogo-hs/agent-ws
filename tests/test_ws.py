@@ -989,6 +989,24 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(out["command"], 'echo "a/b"\nls')
         self.assertEqual(mod.TASK_RE.findall(json.dumps(out)), [("acme", "20200101_other")])
 
+    def test_calc_binds_names_and_hides_float_noise(self):
+        """人に渡す数字は暗算させない。1 回の呼び出しで小計・税・合計が出て、2 進小数の誤差は出力に出ない。"""
+        r = self.ws("calc", "小計=3*12000", "税=int(小計*0.1)", "小計+税", "1.1*12000", "0.1+0.2")
+        self.assertEqual(r.stdout.splitlines(),
+                         ["小計 = 36000", "税 = 3600", "小計+税 = 39600", "1.1*12000 = 13200", "0.1+0.2 = 0.3"])
+        self.assertEqual(self.ws("calc", "a==1 if False else 2").stdout, "a==1 if False else 2 = 2\n")  # == は束縛ではない
+
+    def test_calc_help_renders(self):
+        self.assertIn("偶数丸め", self.ws("calc", "--help").stdout)  # help 文の % は argparse の書式指定に食われる
+
+    def test_calc_rejects_with_reason_and_no_traceback(self):
+        for src in ('__import__("os")', '"a".upper()', "2**10", "1/0", "未定義+1"):
+            r = self.ws("calc", src, check=False)
+            self.assertEqual(r.returncode, 1, src)
+            self.assertTrue(r.stderr.startswith("ws: 式 "), r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertEqual(r.stdout, "")
+
 
 class OntoIntegrationTest(unittest.TestCase):
     """scripts/ws への組み込み（onto サブコマンド・hook の拒否・人の発言での承認・doctor・

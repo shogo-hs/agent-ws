@@ -48,6 +48,7 @@
 ## スクリプトに任せる
 
 タスク作成・情報源の記録・用語集の更新・目次（index.md）の更新は `scripts/ws` がやる（`scripts/ws --help`）。自分で `mkdir` や雛形のコピーをしない。
+人に渡す数字（見積・金額・集計・比率）は暗算せず `scripts/ws calc '小計=3*12000' '税=int(小計*0.1)' '小計+税'` で出す（外した数字は手戻りになる）。式は 1 回にまとめ、照会と同じ Bash に入れてターンを増やさない。端数は `int`（切り捨て）か `round`（偶数丸め）を式に書く。
 手順は `.agents/skills/` の各スキル（task-start / task-resume / ref-add / transcript-ingest / knowledge-promote）にある。
 このリポジトリ自体を直すとき: 本体は `scripts/ws`、オントロジーのエンジンは `scripts/wsonto/`（取り決めは `scripts/wsonto/README.md`）。直したら `python3 -m unittest discover -s tests` が通ることを確認する。
 
