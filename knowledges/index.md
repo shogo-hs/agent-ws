@@ -14,4 +14,5 @@ summary: "案件をまたぐ自社の事実（組織図・決裁範囲・社内�
 <!-- ws:index -->
 - [001_組織図.md](001_組織図.md) [complete] — 自社の部署と決裁者（架空の見本）。1 行 1 人か 1 部署。関係は →所属・→上位・→決裁 だけ
 - [glossary.md](glossary.md) — 自社の固有名詞・略語・表記ゆれ。scripts/ws transcript normalize が案件の用語集と合わせて使う（同じ誤変換は案件側が勝つ）
+- [ontology/](ontology/index.md) — オントロジー: 型 4・つながり 4・できること 1（TransferPerson）。読むのは scripts/ws onto query / show、変えるのは scripts/ws onto act だけ
 <!-- /ws:index -->

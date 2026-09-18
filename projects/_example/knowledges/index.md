@@ -10,4 +10,5 @@ summary: "この案件のナレッジの正本。タスクで得た知見はこ�
 <!-- ws:index -->
 - [001_移行方針.md](001_移行方針.md) [complete] — オンプレの業務システムを Kubernetes に移行する。まず PoC 環境で動作確認し、本番移行は PoC の結果を見て判断する
 - [glossary.md](glossary.md) — この案件の固有名詞・略語・表記ゆれ・文字起こしの誤変換。scripts/ws transcript normalize が置換に使う
+- [ontology/](ontology/index.md) — オントロジー: 型 9・つながり 8・できること 4（AddActionItem・CloseActionItem・IssueEstimate・RecordSizingDecision）。共通の型も使える。読むのは scripts/ws onto query / show、変えるのは scripts/ws onto act だけ
 <!-- /ws:index -->

@@ -8,9 +8,7 @@
 
 1. セッション開始時に hook が注入する「現在のタスク」の `index.md` の全文（目的・進め方・現在地・次の一手・情報源の一覧）とナレッジの一覧。読み直さない。長すぎて注入されないときだけ Read する
 2. その案件の `knowledges/index.md`。必要なナレッジだけを開き、使ったら `index.md` の「参照したナレッジ」に `- knowledges/<file>（updated YYYY-MM-DD）: 使った要点` の形で残す（`doctor` が参照後の更新を警告する）
-3. 自社の組織図・決裁範囲・社内システム・標準手順・共通用語（案件をまたぐ事実）は repo 直下の `knowledges/`（共通）。一覧は hook が差し込む。固有名詞・略語が出てきたら `knowledges/glossary.md`（用語集。案件と共通の両方を `transcript normalize` が引く）。案件側と同じ語・事実があれば案件側が勝つ
-
-フォルダに入ったら最初に `index.md` を読む。中身の一覧はそこにある。全ファイルを `ls` や `grep` で舐めない（`projects/`・案件直下・`tasks/` 直下への find/ls/grep/rg と、パス指定の無い Grep/Glob は hook が拒否する）。
+3. 自社の組織図・決裁範囲・社内システム・標準手順・共通用語（案件をまたぐ事実）は repo 直下の `knowledges/`（共通）。一覧は hook が差し込む。固有名詞・略語が出てきたら `knowledges/glossary.md`（用語集。案件と共通の両方を `transcript normalize` が引く）。案件側と同じ語・事実があれば案件側が勝つ。フォルダに入ったら最初に `index.md` を読む。中身の一覧はそこにある。全ファイルを `ls` や `grep` で舐めない（`projects/`・案件直下・`tasks/` 直下への find/ls/grep/rg と、パス指定の無い Grep/Glob は hook が拒否する）。
 
 ## Web と資料の読み方
 
@@ -51,10 +49,12 @@
 
 タスク作成・情報源の記録・用語集の更新・目次（index.md）の更新は `scripts/ws` がやる（`scripts/ws --help`）。自分で `mkdir` や雛形のコピーをしない。
 手順は `.agents/skills/` の各スキル（task-start / task-resume / ref-add / transcript-ingest / knowledge-promote）にある。
-このリポジトリ自体を直すとき: hooks と CLI の本体は `scripts/ws` の 1 ファイル。直したら `python3 -m unittest tests/test_ws.py` が通ることを確認する。
+このリポジトリ自体を直すとき: 本体は `scripts/ws`、オントロジーのエンジンは `scripts/wsonto/`（取り決めは `scripts/wsonto/README.md`）。直したら `python3 -m unittest discover -s tests` が通ることを確認する。
 
 ## 同じ失敗を繰り返さない
 
 人から指摘を受けたら、その場で `scripts/ws lesson add "〜のとき、〜する（理由）"` で `LESSONS.md` に 1 行残す（案件固有なら `--project <案件>` で案件の決まりごとへ）。hook が起動のたびに全行を差し込む。2 回目を待たない（1 回目を覚えている者がいない）。
-成果物を人に直された手戻りは、頭に型を付けて残す: 「古い数字」「誤った関係者」「決定違反」（例 `lesson add "古い数字: 見積の台数は提案書ではなく移行方針の決定を使う（8 台で出して直された）"`）。案件が 3 つ回ったらこの 3 型を数え、用語集の「関係」列とナレッジの relates_to / supersedes を必須にするかを決める。
-道具の落とし穴（スクリプトやスキルの使い方）は、該当するスキル（`.agents/skills/<name>/SKILL.md`）の「つまずきどころ」に書く。`LESSONS.md` が 20 行を超えたら統合するか、規約（この文書）か `doctor` の検査へ昇格して減らす。長くなるほど守られなくなる。
+成果物を人に直された手戻りは、頭に型を付けて残す: 「古い数字」「誤った関係者」「決定違反」（例 `lesson add "古い数字: 見積の台数は提案書ではなく移行方針の決定を使う（8 台で出して直された）"`）。道具の落とし穴（スクリプトやスキルの使い方）は、該当するスキル（`.agents/skills/<name>/SKILL.md`）の「つまずきどころ」に書く。`LESSONS.md` が 20 行を超えたら統合するか、規約（この文書）か `doctor` の検査へ昇格して減らす。長くなるほど守られなくなる。
+
+## 業務の状態はオントロジー経由で（定義がある案件だけ）
+ナレッジの一覧に `ontology/` の行があれば、その案件（か自社共通）には型が定義されている。読むのは `scripts/ws onto query <型> --where …` と `show <型:id>`（`types` / `describe` で型とアクションを確認）で、実体のファイルは直接読まない（hook が拒否する）。変えるのは `scripts/ws onto act <アクション> 名前=値 …` だけで、金額や台数は自分で計算せず返り値を使い、拒否されたら理由文に従って前提を直す（無理に通そうとしない）。`実行待ち P-0001` が返ったら人に「承認 P-0001」と送ってもらうよう伝えて待つ（自分では承認できない）。型・つながり・アクションの追加や修正は ontology-define スキルへ。照会と実行は 1 回の Bash にまとめてターンを減らす。

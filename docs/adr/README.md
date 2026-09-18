@@ -18,7 +18,7 @@
 | [0011](0011-no-apm-distribution.md) | 配布に Microsoft APM を使わない | 採用 | 逐語の重複は researcher の 4 行だけ。移すと単一正本がハーネスごとのコピーに戻る |
 | [0012](0012-token-levers-are-session-length-not-tools.md) | 索引・グラフ・出力圧縮のツールは入れない | 採用 | 消費はセッション長の 2 乗。tool search が既定オンで MCP の削減余地は無い |
 | [0013](0013-no-backend-context-engineering-port.md) | InsForge 型の backend context engineering は取り込まない | 採用 | 狭い skills・CLI・1 回の状態注入・拒否文は同等物が既にある。bench で拒否は 45 本中 3 回 |
-| [0014](0014-no-ontology-layer.md) | 重いオントロジー（グラフ DB・MCP・precondition）は入れない。軽い関係層は実務で判断する | 保留 | 前提の注入・用語集・hook が同等物。関係の欄は任意で足し、手戻りの 3 型を LESSONS に数えて 3 案件後に決める |
+| [0014](0014-no-ontology-layer.md) | 重いオントロジー（グラフ DB・MCP・precondition）は入れない。軽い関係層は実務で判断する | 0022 で置き換え | 前提の注入・用語集・hook が同等物。関係の欄は任意で足し、手戻りの 3 型を LESSONS に数えて 3 案件後に決める |
 | [0016](0016-no-llm-retrospective-count-instead.md) | セッション終了時の自動レトロスペクティブは LLM に振り返らせない。数えられる指標を残し、規約の変更は人が決める | 提案 | SessionEnd は LLM 型 hook 不可・最大 60 秒。先行実装 10 本に効果の測定なし。正解の無い自己判定は精度を下げ、自動追記は 1,421 行に育つ。`ws retro` で拒否・ターン・文脈を数え、doctor が人に見せる |
 | [0015](0015-common-knowledges-for-cross-project-facts.md) | 案件をまたぐ自社の事実は repo 直下の knowledges/（共通）に置く | 採用 | 組織図・決裁範囲・社内システム・標準手順・共通用語。3 ヶ月変わらないものだけ、案件側が勝つ、1 ファイル 1 担当で 90 日で doctor が警告。注入の増分は 274 字 |
 | [0017](0017-disable-claude-code-advisor.md) | Claude Code の Advisor（相談役モデル）はリポジトリの settings で外す | 採用 | 正誤に効かず（5/5 対 5/5）相談が起きた本だけ 3.4〜3.7 倍。相談 1 回で Opus が 44k を非キャッシュで読む。`env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`。戻すなら行を消す |
@@ -27,6 +27,7 @@
 
 | [0020](0020-codex-researcher-luna-max-read-to-end.md) | Codex の調査係は gpt-5.6-luna・max にし、researcher に「末尾まで読み切る」規則を足す | 採用 | gpt-5.4-mini は 2026-08-31 に Codex（ChatGPT ログイン）から退役。low は読み切らずに書き始め、規則を足しても 8 回中 2 回は決定の 4 割を落とす。max は 7 回とも落とさず、代償は時間 2.4 倍と luna 単価のトークン 3 倍 |
 | [0021](0021-deny-unused-eager-tools-and-effort-knob.md) | 使わない常時ロードのツール定義は `permissions.deny` で外す。effort と thinking は既定を変えず調整ノブにする | 採用 | 固定分 35,105 のうち 4,884 が案件の仕事で呼ばれないツールの定義。bench trap で処理入力 −28%・費用 −14%。effort medium は費用 −14% で 5/5 正解だが、正誤が保てると言えるのが trap だけなので既定にしない |
+| [0022](0022-operational-ontology.md) | 業務のオントロジーは「業務を動かす層」として入れる。定義は JSON、解釈と強制は scripts 側 | 採用 | 型・つながりと件数・継承・アクション（引数・前提条件・ルール・承認）を JSON に定義し、`scripts/wsonto/` が前提条件を実体の値で判定して理由つきで拒否する。承認は人だけ（発言か端末）。エージェントは実体を直接読み書きできない。定義の変更も lint と承認を通す。W3C の形式に書き出し、pySHACL と同じ判定になることをテストする |
 
 ## 書き方
 

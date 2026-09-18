@@ -12,6 +12,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 - 「どこから・いつ・原文は何か」が残るので、次のセッションが再収集しない
 - 会議の文字起こしの誤変換を、案件の用語集で機械的に直してから読ませられる
 - Claude Code と Codex CLI で同じ指示・同じスキル・同じ hooks が効く
+- 業務の型・つながり・できること（アクション）を JSON で定義すると、前提条件はエージェントの判断ではなくエンジンが実体の値で検査して理由付きで拒否し、金額のような計算もエンジンがする。決裁の要る変更は実行待ちに積まれ、人の承認を経てから反映される（[オントロジー](#オントロジー業務の型つながりできること)）
 
 ## 導入（初回だけ）
 
@@ -43,6 +44,10 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」「IdP 連携の担当は鈴木さん」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` / `glossary add acme "IdP 連携" --relation "→担当: 鈴木"` で用語集に足す（「関係」は任意。3 ヶ月変わらないものだけ） |
 | 「うちは部長決裁が 500 万円まで」「勤怠システムは KinTai って呼んでる」 | `scripts/ws know new --common "決裁範囲" --owner "経営企画室"` / `glossary add --common "KinTai" --alias "勤怠システム"` で repo 直下の `knowledges/`（共通。案件をまたぐ自社の事実）に書く。3 ヶ月変わらないものだけ。案件側と同じ語・事実があれば案件側が勝つ |
+| 「acme の見積を 12 台・12 か月で出して」（型が定義されている案件だけ） | `scripts/ws onto act IssueEstimate title="運用の見積" sizing=SD-2 items=pi-node,pi-monitor months=12 approver=sato`。返るのは拒否（理由文つき）・反映（計算した値つき）・実行待ち（決裁の上限を超えるとき）のいずれか |
+| 「IdP 連携の担当は誰？」 | `scripts/ws onto query Person --where "any('IdP' in w.name for w in leads)"` か `show <型:id>` で照会する。型やアクションの一覧・詳細は `types` / `describe` |
+| 「承認 P-0001」（人が送る） | UserPromptSubmit hook がその発言を拾い、積んだときの前提ではなく今の状態で検査し直してから実行待ちを反映する。エージェントは何もしない（自分では承認できない） |
+| 「うちの業務の型を定義して」 | ontology-define スキル。「答えたい質問」を書くところから始める |
 | 「結論を先に書いて」「その言い方はやめて」 | `scripts/ws lesson add "報告は結論を先に書く（読む人はチャットしか見ない）"` で `LESSONS.md` に 1 行残す。案件固有なら `--project acme` で案件の決まりごとへ |
 | 「このタスクは終わり」 | `scripts/ws task done`。状態を done にし、「現在のタスク」を外す |
 
@@ -91,15 +96,19 @@ agent-ws/
 │   ├── task-resume/       既存タスクを index.md から再開する
 │   ├── ref-add/           情報源を references/ に記録する
 │   ├── transcript-ingest/ 文字起こしを用語集で直してナレッジ化する
-│   └── knowledge-promote/ タスクで得た知見を knowledges/ に昇格する
+│   ├── knowledge-promote/ タスクで得た知見を knowledges/ に昇格する
+│   └── ontology-define/   業務の型・つながり・アクションを定義する（定義がある案件だけ関係する）
 ├── scripts/ws             エージェントが呼ぶ CLI（python3 の標準ライブラリだけで動く）
+├── scripts/wsonto/        オントロジーのエンジン（定義の読み込み・照会・実行・承認・書き出し。取り決めは [scripts/wsonto/README.md](scripts/wsonto/README.md)）
 ├── templates/             案件・タスク・ナレッジ・情報源・用語集・共通ナレッジの雛形
 ├── knowledges/            案件をまたぐ自社の事実（組織図・決裁範囲・社内システム・標準手順・共通用語）。案件の knowledges/ と同じ形。見本は架空
+│   └── ontology/          自社共通の型定義（あれば。ontology.json・実体・記録・実行待ち・index.md）
 ├── projects/
 │   ├── index.md           案件一覧
 │   └── <案件>/
 │       ├── index.md       案件の概要と決まりごと
 │       ├── knowledges/    ナレッジの正本（index.md / glossary.md / NNN_*.md）
+│       │   └── ontology/  案件の型定義（あれば。ontology.json・objects.json・log.jsonl・proposals/・questions.json・index.md）
 │       └── tasks/
 │           ├── index.md   タスク一覧
 │           └── <yyyymmdd_slug>/
@@ -110,6 +119,8 @@ agent-ws/
 │   ├── sources/           規則の根拠台帳（委譲規則・トークン節約の 5 点。URL・取得日時・支えている規則）
 │   └── snapshots/         出典ページの原文（要点 .md と原文 .orig.md の対）
 ├── tests/test_ws.py       scripts/ws の自己チェック
+├── tests/test_onto_*.py   scripts/wsonto の自己チェック（schema・store・engine・query・export・lint・W3C 突き合わせ）
+├── tests/fixtures/onto_case/  オントロジーの適合テストの見本（架空の案件支援。common/ が自社の部署・人・決裁権限、project/ が案件の決定・台数・単価・見積）
 └── .ws/                   （git 管理外）最後に触ったタスク（current。完了の印ではない）と、セッションごとの現在のタスクの写し・最終応答時刻
 ```
 
@@ -156,6 +167,8 @@ Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` か�
 
 正規化版（`.normalized.md`）がある文字起こしの原文を Read や Grep しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed`/`grep` は書き換えずに deny し、正規化版のパスを示します）。
 
+オントロジーのディレクトリ（`knowledges/ontology/` と `projects/*/knowledges/ontology/`）でエージェントが直接読めるのは、`ontology.json`・`index.md`・`questions.json` の 3 つだけです（現在のタスクの有無に関係なく）。実体・記録・実行待ち（`objects.json`・`log.jsonl`・`proposals/`）は読みも書きも拒否し、`scripts/ws onto query / show / log / act` に誘導します。ディレクトリ指定・glob・`cd` してからの相対パス・`knowledges/` の再帰の走査（`grep -r`・`rg`・`find`）も拒否します（Grep ツールで `knowledges/` を検索するときは、glob が未指定なら `*.md` を足して通します）。配下への Edit / Write / MultiEdit / NotebookEdit と、Codex CLI のファイル編集（`apply_patch`）も拒否します（`define apply` に誘導）。`onto approve` / `reject` / `adopt` を含むコマンド、セッションの環境変数を外したり疑似端末（`script`）で包んだりして `onto` を呼ぶコマンド、承認・却下の文面つきの `claude` / `codex` の起動も拒否します（承認は人だけ）。agent-ws 自体を直すときは、hook のプロセスの環境変数 `WS_ONTO_MAINT=1` で、承認まわり以外の拒否を外せます（エージェントの Bash からは hook のプロセスの環境を変えられません）。hook が止めるのは「うっかり触る」エージェントです。変数にパスを入れる・`python -c` で読む、のような回り道までは止めません。書き換えは、記録にある実体のハッシュとの不一致として `doctor` が後から見つけます。
+
 ### 1 時間以上空いたあとの 1 通目を止める
 
 Claude のプロンプトキャッシュはサブスクリプションで 1 時間で切れ、切れたあと同じ会話に続きを送ると会話全文を定価で再処理します。
@@ -175,6 +188,7 @@ Claude で API キーを直に叩いていてキャッシュが 5 分で切れ�
 `knowledges/glossary.md` は Markdown の表（正式表記 / 読み / 誤変換・別表記 / 説明）です。
 人が GitHub や Obsidian でそのまま読め、`scripts/ws transcript normalize` も同じ表を読みます。
 置換は表に書いた文字列と一致した箇所だけで、読みが近い語を推測して置き換えることはしません。1〜2 文字の語や一般語は誤爆するので書かないでください。
+用語集の「関係」列とナレッジの frontmatter `relates_to` / `supersedes` は残っています（任意欄。誰も読まない欄になりがちでした）。関係を書くなら、次のオントロジーの `link_types` に定義するほうを勧めます。
 
 ### 共通ナレッジ（案件をまたぐ自社の事実）
 
@@ -182,6 +196,82 @@ Claude で API キーを直に叩いていてキャッシュが 5 分で切れ�
 SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差し込みます（現在のタスクが無いときも）。見本の組織図 1 枚と用語 3 語での増分は 274 字（現在のタスクあり 1,836 → 2,110 字、無し 136 → 410 字）で、共通側が無ければ 0 です。本文は必要なときだけ読みます。
 同じ語・同じ事実が案件側と共通側にあれば案件側が勝ちます（顧客の組織図は案件、自社の組織図は共通）。`scripts/ws transcript normalize` は共通 → 案件の順に用語集を読み、同じ誤変換は案件側で上書きします。
 共通側は案件の外で腐るので、1 ファイル 1 担当（frontmatter の `owner`）を持たせます。`owner` が空か `updated` が 90 日を超えると `scripts/ws doctor` が警告するので、担当が中身を確かめて `updated` を直すか消してください。hook は共通 `knowledges/` の読み書きを現在のタスクの有無に関係なく通します（`projects/` 横断とルートの一覧・検索の拒否は変わりません）。設計判断は `docs/adr/0015`。
+
+### オントロジー（業務の型・つながり・できること）
+
+自社共通の `knowledges/ontology/ontology.json` と案件ごとの `projects/<案件>/knowledges/ontology/ontology.json` に、業務の「型・つながり・できること（アクション）・制約」を JSON で書くと、`scripts/wsonto/`（取り決めは [scripts/wsonto/README.md](scripts/wsonto/README.md)）が読み込んで、照会・実行・承認・記録・書き出しを行います。定義を置いていない案件にはこの節は関係なく、起動時の注入（ナレッジの一覧）への増分も 0 字です。置いた場合の増分は、ナレッジの一覧に載る 1 行ぶんです（同梱の見本で実測: 共通だけが見える状態で 410 → 551 字の +141 字、見本の案件のタスクで 2,110 → 2,451 字の +341 字）。ナレッジの一覧に `ontology/` の行があれば、その案件（か自社共通）には型が定義されています。
+
+**何を定義できるか**
+
+| 種類 | 中身 |
+|---|---|
+| 型とプロパティ | `object_types`。名前・別名・説明・プロパティ（文字列・数値・日付・enum など。必須・一意・既定値・エージェントに見せるか＝`agent_visible`。照会の出力と絞り込みから外すための設定で、秘密を守る境界ではありません。見せたくない値はオントロジーに入れないでください） |
+| つながり | `link_types`。from → to の件数の下限・上限と、逆向きの名前（例: `owner` の逆は `action_items`） |
+| 型の継承 | `extends`。「すべての A は B か」と言えるときだけ使う（例: 案件の `Stakeholder` は共通の `Person` を extends。共通の型を案件で拡張できる。逆はできない） |
+| できること（アクション） | `action_types`。引数・前提条件（`criteria`）・適用するルール・承認の要否（`approval`） |
+| 定数 | `constants`。式から名前で参照する値（契約月数の下限など）。引数では上書きできない |
+
+**アクション 1 回の流れ**
+
+`scripts/ws onto act <アクション> 名前=値 …` は次の順で進みます。①引数の型と必須項目を検査する ②前提条件をすべて評価し、満たさないものがあれば理由文を添えて拒否する ③問題なければ実体の写しにルールを適用する ④触った実体を制約（SHACL 相当）で検査し、違反があれば元の実体を変えずに拒否する ⑤承認が要るかを判定する ⑥要らなければ反映して記録し、要れば実行待ちに積んで記録する。**どの段階で落ちても、本物の実体は変わりません。**
+
+**見本の案件（架空の ACME 社移行支援）での具体例** — 見本は共通の `knowledges/ontology/` と `projects/_example/knowledges/ontology/` に同梱してあり（内容はテストの基準 `tests/fixtures/onto_case/` と同じ。消して構いません）、`scripts/ws onto types --project _example` や `scripts/ws onto eval --project _example` でそのまま試せます。
+
+- 置き換え済みの決定（提案時の台数・8 台）を前提にした見積は、現行の決定（PoC の結果で見直した台数・12 台）を示して拒否されます。
+- 12 台・12 か月の見積は、月額 410,000 円・総額 4,920,000 円をエンジンが計算して反映されます（営業部長の決裁上限 500 万円の範囲内なので）。
+- 同じ内容を 24 か月にすると総額が決裁上限を超えるため、実行待ちに積まれます。
+- 有効期限の切れた単価や、見積の決裁権限を持たない人を指定した見積は拒否されます。
+
+**承認のしかた**
+
+決裁の要るアクションと定義の変更は、実行待ち（`proposals/P-0001.json` か `S-0001.json`）に積まれます。承認できるのは人だけです。人が自分で `act` や `define apply` を叩いた場合も、承認が要るものは同じように実行待ちになります（「人が実行したものは承認を省く」作りにすると、エージェントが人に化けたときに素通りするため）。チャットで「承認 P-0001」と送るか、端末で `scripts/ws onto approve P-0001` を実行します。積んだ時点の前提ではなく、承認したときの今の状態で検査をやり直してから反映します。エージェントが承認・却下を実行しようとすると hook が拒否します。
+
+**定義の変え方**
+
+型・つながり・アクション・定数を変えるときは `ontology.json` を直接編集できません（hook が拒否し、`scripts/ws onto define apply <patch.json>` に誘導します）。`define apply` は patch を今の定義にマージし、メタモデルの検査（名前の規則・参照先の不在・継承の循環など）と lint のアンチパターン検収を行い、今の実体を新しい定義で検査してから実行待ちに積みます。人が承認すると版（`version`）が 1 上がり、`ontology.json` が置き換わります。lint が見るアンチパターン:
+
+| code | 見るもの |
+|---|---|
+| `MISNOMER` | プロパティ・リンクの名前が `date` `value` `item` のような汎用語 |
+| `SET_ACTION` | 名前が `Set`/`Update` で始まり、1 プロパティしか変えないアクション |
+| `ACTION_SPRAWL` | 1 つの型を対象にするアクションが 10 を超える |
+| `KITCHEN_SINK` | 技術列らしい名前（`etl_` `_hash` など）や、1 つの型に 20 超のプロパティ |
+| `GOD_OBJECT` | 実体 10 件以上の型で、埋まっている率が 30% 未満のプロパティが 5 つ以上 |
+| `TIME_MACHINE` | 型名が `V2` `Old` `Bak` などで終わる |
+| `SILO_NAME` | 別の型と label・別名が重なる |
+| `THIN_DESCRIPTION` | アクションの説明が 20 字未満 |
+
+**記録と改ざんの検出**
+
+アクション・承認・却下・定義の変更はすべて `log.jsonl` に 1 行ずつ追記され、拒否も残ります。各行に誰が・何を・結果・変更前後の値・記録のハッシュが入ります。アクションを通さずに `objects.json` を直接書き換えると、`scripts/ws doctor` が最後の記録のハッシュと今のファイルのハッシュの食い違いを見つけます。
+
+**答えたい質問と eval**
+
+型を定義するときは、先に `questions.json` に「答えたい質問」を書きます。`scripts/ws onto eval` はその質問を写しの上で実行し、期待どおりの答えが返るかを確かめます（本物の実体は変えません）。
+
+**書き出し**
+
+`scripts/ws onto export --format jsonschema|turtle|mermaid|markdown` で定義を書き出せます。JSON Schema はアクションの引数と実体の形、Turtle は RDFS/OWL の語彙と SHACL の制約（rdflib / pySHACL で検査できます）、Mermaid は ER 図、markdown は `index.md` に使う人向けの表と図です。
+
+**コマンド**
+
+| コマンド | 中身 |
+|---|---|
+| `init [--common\|--project X]` | 空の定義を作る（既にあれば何もしない） |
+| `types` | 型とアクションの一覧 |
+| `describe <型かアクション>` | 型ならプロパティ・つながり、アクションなら引数・前提条件・承認 |
+| `query <型> [--where 式] [--select a,b] [--limit N]` | 実体を照会する |
+| `show <型:id>` | 1 件の値・つながり・関係する実行待ちを見る |
+| `act <アクション> [名前=値 …] [--why 文] [--dry-run]` | アクションを実行する（反映・実行待ち・拒否のいずれかを返す） |
+| `define apply <patch.json> [--why 文]` | 定義を変える（検査・lint のあと実行待ちに積む） |
+| `approve <P-… か S-…>` / `reject <id> --reason 文` | 人だけ。実行待ちを承認・却下する |
+| `proposals [--all]` | 実行待ちの一覧 |
+| `validate` / `lint` / `eval` | 制約検査 / 定義の検収 / 答えたい質問の評価 |
+| `export --format … [--out path]` | 書き出し |
+| `log [--object 型:id] [--action 名前] [--limit N]` | 記録の照会 |
+| `adopt --note 文` | 人だけ。手で直した実体を記録に取り込む |
+
+型・つながり・アクションを足す・直すのは `.agents/skills/ontology-define/` スキルです。設計判断は [ADR 0022](docs/adr/0022-operational-ontology.md)。
 
 ### 人からの指摘
 
@@ -276,16 +366,22 @@ agent-ws は 1 セッション目が `scripts/ws` で残した index.md と refe
 - 「Sonnet でも安定する」は、この材料では「古い数字を掴む」形の誤答が 1 回も出なかったので示せていません。仕組みなしの失敗はすべて「聞き返して止まる」でした
 - 毎ターン固定で送られる分は agent-ws が Sonnet で 32.0k、仕組みなしが 29.2k（AGENTS.md・skills・注入の 2.9k）。Haiku 4.5 は 24.5k と 21.8k
 - Codex CLI・Opus・compact 後の再注入・用語集の正規化は測っていません
+- オントロジーの hook と CLI は、Claude Code に加えて Codex CLI 0.153.4 の実機でも確かめました（実体ファイルの直接の読み取り・定義の `apply_patch`・エージェントからの `approve` は拒否、照会と `act` は通り、人の発言「承認 <案件>/P-0001」で承認が実行されて結果が Codex の文脈に載る）。実機の Windows では確かめていません
+- オントロジーがエージェントの正確さとトークンに与える効果は未計測です。照会（`query`/`show`）と実行（`act`）はそれぞれ 1 ターンなので、1 タスクあたりのトークンは増える見込みで、減るとすれば防げた手戻りの分だけです
 
 `bench/` は agent-ws を使うだけなら不要です。`projects/_example/` と同じく消して構いません。
 
 ## 開発
 
 ```
-python3 -m unittest tests/test_ws.py
+python3 -m unittest discover -s tests
 ```
 
-案件作成 → タスク作成 → hook の拒否と許可 → 情報源の保存 → 用語集と正規化 → ナレッジ昇格 → 完了、を一時ディレクトリで通します。
+案件作成 → タスク作成 → hook の拒否と許可 → 情報源の保存 → 用語集と正規化 → ナレッジ昇格 → 完了、を一時ディレクトリで通します。オントロジー（`scripts/wsonto/`）は `tests/test_onto_*.py` に別立てで、`tests/fixtures/onto_case/` を適合の基準にしています。W3C の語彙（RDFS/OWL・SHACL）との突き合わせだけは `rdflib` が要るので別に走らせます（無ければ skip）。
+
+```
+uv run --with rdflib --with pyshacl python3 -m unittest tests/test_onto_w3c.py tests/test_onto_parity.py
+```
 
 ## ライセンス
 
