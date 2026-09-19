@@ -38,6 +38,7 @@ TEMPLATES = ROOT / "templates"
 EXAMPLES = TEMPLATES / "examples.json"  # 同梱の見本（パス → sha256）。init が消すのはこれと内容が同じファイルだけ（ADR 0023）
 EXAMPLE_ROOTS = ("projects/_example", "knowledges")
 CURRENT = ROOT / ".ws" / "current"
+LAST_DONE = ROOT / ".ws" / "last_done"  # 直前に完了したタスク。未設定のセッションに「次の一手」を引き継ぐ
 IDX_BEGIN = "<!-- ws:index -->"
 IDX_END = "<!-- /ws:index -->"
 # projects/<案件>/tasks/<タスク> をツール入力のどこからでも拾う
@@ -367,6 +368,8 @@ def cmd_task_done(args):
     if released:
         CURRENT.unlink()  # 他のセッションが別のタスクに切り替えていたら、そちらは残す
     update_index(t.parent)
+    LAST_DONE.parent.mkdir(exist_ok=True)
+    LAST_DONE.write_text(rel(t) + "\n", encoding="utf-8")
     print(f"完了: {rel(t)}" + ("（現在のタスクを解除した）" if released or not args.path else ""))
 
 
@@ -1161,7 +1164,8 @@ def cmd_hook_session_start(args):
     t = current_task(sid)
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
-              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。\n" + common + tail)
+              "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。\n"
+              + _last_done_block() + common + tail)
         return
     meta, body = read_frontmatter(t / "index.md")
     proj = project_of(t)
@@ -1184,6 +1188,19 @@ def cmd_hook_session_start(args):
     _emit_context(head + f"まず {rel(t)}/index.md を読む。ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。"
                   + ("共通ナレッジ（自社の組織・用語）は knowledges/index.md から。" if common else "") + "\n"
                   f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
+
+
+def _last_done_block() -> str:
+    """直前に完了したタスクの「次の一手」。完了したタスクは hook が読ませないので、ここで渡さないと
+    次のセッションが「続きをやって」に答えられない（完了時に書いた次の候補が、誰にも読めなくなる）。"""
+    text = LAST_DONE.read_text(encoding="utf-8").strip() if LAST_DONE.exists() else ""
+    idx = ROOT / text / "index.md"
+    if not text or not idx.exists():
+        return ""
+    meta, body = read_frontmatter(idx)
+    return (f"直前に完了したタスク: {text}（{meta.get('title', '')}）。「続きをやって」と言われたら、"
+            f"下の次の一手から新しいタスクを切る（完了したタスクのフォルダは読まない）。\n"
+            f"その次の一手（index.md より）: {_section(body, '次の一手', 600)}\n")
 
 
 def _common_block() -> str:
