@@ -111,6 +111,20 @@ class WsFlowTest(unittest.TestCase):
         self.assertIn("[done]", (self.root / "projects/acme/tasks/index.md").read_text(encoding="utf-8"))
         self.assertIn("未設定", self.ws("hook", "session-start", stdin="{}").stdout)
 
+    def test_session_start_hands_over_next_step_of_last_done_task(self):
+        # 完了したタスクは hook が読ませない。次の一手をここで渡さないと「続きをやって」に答えられない
+        self.ws("project", "new", "acme")
+        self.assertNotIn("直前に完了したタスク", self.ws("hook", "session-start", stdin="{}").stdout)
+        self.ws("task", "new", "acme", "t1")
+        idx = next((self.root / "projects/acme/tasks").glob("*_t1")) / "index.md"
+        idx.write_text(idx.read_text(encoding="utf-8").replace(
+            "## 次の一手\n", "## 次の一手\n次は承認の道具を作る。\n", 1), encoding="utf-8")
+        self.ws("task", "done")
+        out = self.ws("hook", "session-start", stdin="{}").stdout
+        self.assertIn("未設定", out)
+        self.assertIn("直前に完了したタスク: projects/acme/tasks/", out)
+        self.assertIn("次は承認の道具を作る。", out)
+
     def test_session_start_reads_next_step(self):
         self.ws("project", "new", "acme")
         self.ws("task", "new", "acme", "t1")
