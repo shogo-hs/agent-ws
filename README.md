@@ -24,8 +24,9 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
    - Codex CLI（0.153 以上）: 初回にフォルダを信頼するか聞かれます。信頼したあと `/hooks` を開き、`.codex/hooks.json` の 4 つの hook を確認して trust します。
      信頼していない hook は警告なしに飛ばされるので、起動時に `[agent-ws] 現在のタスク` の案内が出なければ `/hooks` を見直してください。
      `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
+5. 見本で動きを確かめ終えたら `scripts/ws init` で同梱の見本を消します。消えるのは同梱時から内容を変えていないファイルだけで、書き換えたファイルと自分で足したファイルは残ります（残したファイルは実行結果に出ます。見本を試して `projects/_example/` の中身が変わっていた場合は、フォルダごと手で消して `scripts/ws index` を実行してください）。消せる見本が残っている間は起動時にエージェントへ 1 行の案内が入ります。
 
-`projects/_example/` はサンプル案件です（内容はすべて架空）。自分の案件を作ったら消して構いません。
+見本は 2 か所にあります。`projects/_example/`（架空の案件）と repo 直下の `knowledges/`（架空の自社の組織図・用語・オントロジー）です。その場で自社の内容に書き換えて使うか、まとめて `scripts/ws init` で消してから自分の内容を書くか、どちらでも構いません。
 `docs/snapshots/`（規則の根拠にした Web ページの原文。約 2.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
@@ -76,6 +77,7 @@ scripts/ws task new acme kickoff --title "キックオフ準備"
 scripts/ws task current
 scripts/ws task done projects/acme/tasks/<dir>   # 終わったタスクを閉じる（doctor が 14 日放置の doing を知らせる）
 scripts/ws doctor            # index.md や frontmatter の欠落を報告する
+scripts/ws init               # 同梱の見本（projects/_example/・knowledges/）のうち書き換えていないファイルだけを消す
 scripts/ws calc '小計=3*12000' '税=int(小計*0.1)' '小計+税'   # 人に渡す数字は暗算させない（式は wsonto の式言語。任意のコードは走らない）
 ```
 
@@ -193,7 +195,7 @@ Claude で API キーを直に叩いていてキャッシュが 5 分で切れ�
 
 ### 共通ナレッジ（案件をまたぐ自社の事実）
 
-自社の組織図・決裁範囲・社内システムの一覧・標準手順・共通用語のように、どの案件でも同じで 3 ヶ月は変わらない事実は、repo 直下の `knowledges/` に置きます（案件の `knowledges/` と同じ形。`scripts/ws know new --common "タイトル" --owner "担当"` と `glossary add --common`）。進捗・数値・案件ごとの決定は案件側に置きます。組織図は 1 行 1 人か 1 部署で、関係は `→所属`・`→上位`・`→決裁` だけを書きます（見本は `knowledges/001_組織図.md`。架空です）。
+自社の組織図・決裁範囲・社内システムの一覧・標準手順・共通用語のように、どの案件でも同じで 3 ヶ月は変わらない事実は、repo 直下の `knowledges/` に置きます（案件の `knowledges/` と同じ形。`scripts/ws know new --common "タイトル" --owner "担当"` と `glossary add --common`）。進捗・数値・案件ごとの決定は案件側に置きます。組織図は 1 行 1 人か 1 部署で、関係は `→所属`・`→上位`・`→決裁` だけを書きます（見本は `knowledges/001_組織図.md`。架空です）。見本はその場で自社の内容に書き換えて使うか（書き換えたファイルは `scripts/ws init` で消えません）、まとめて `scripts/ws init` で消してから自分の内容を書くか、どちらでも構いません。
 SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差し込みます（現在のタスクが無いときも）。見本の組織図 1 枚と用語 3 語での増分は 274 字（現在のタスクあり 1,836 → 2,110 字、無し 136 → 410 字）で、共通側が無ければ 0 です。本文は必要なときだけ読みます。
 同じ語・同じ事実が案件側と共通側にあれば案件側が勝ちます（顧客の組織図は案件、自社の組織図は共通）。`scripts/ws transcript normalize` は共通 → 案件の順に用語集を読み、同じ誤変換は案件側で上書きします。
 共通側は案件の外で腐るので、1 ファイル 1 担当（frontmatter の `owner`）を持たせます。`owner` が空か `updated` が 90 日を超えると `scripts/ws doctor` が警告するので、担当が中身を確かめて `updated` を直すか消してください。hook は共通 `knowledges/` の読み書きを現在のタスクの有無に関係なく通します（`projects/` 横断とルートの一覧・検索の拒否は変わりません）。設計判断は `docs/adr/0015`。
@@ -216,7 +218,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 
 `scripts/ws onto act <アクション> 名前=値 …` は次の順で進みます。①引数の型と必須項目を検査する ②前提条件をすべて評価し、満たさないものがあれば理由文を添えて拒否する ③問題なければ実体の写しにルールを適用する ④触った実体を制約（SHACL 相当）で検査し、違反があれば元の実体を変えずに拒否する ⑤承認が要るかを判定する ⑥要らなければ反映して記録し、要れば実行待ちに積んで記録する。**どの段階で落ちても、本物の実体は変わりません。**
 
-**見本の案件（架空の ACME 社移行支援）での具体例** — 見本は共通の `knowledges/ontology/` と `projects/_example/knowledges/ontology/` に同梱してあり（内容はテストの基準 `tests/fixtures/onto_case/` と同じ。消して構いません）、`scripts/ws onto types --project _example` や `scripts/ws onto eval --project _example` でそのまま試せます。
+**見本の案件（架空の ACME 社移行支援）での具体例** — 見本は共通の `knowledges/ontology/` と `projects/_example/knowledges/ontology/` に同梱してあり（内容はテストの基準 `tests/fixtures/onto_case/` と同じ）、`scripts/ws init` で消すまでは `scripts/ws onto types --project _example` や `scripts/ws onto eval --project _example` でそのまま試せます。
 
 - 置き換え済みの決定（提案時の台数・8 台）を前提にした見積は、現行の決定（PoC の結果で見直した台数・12 台）を示して拒否されます。
 - 12 台・12 か月の見積は、月額 410,000 円・総額 4,920,000 円をエンジンが計算して反映されます（営業部長の決裁上限 500 万円の範囲内なので）。
@@ -370,7 +372,7 @@ agent-ws は 1 セッション目が `scripts/ws` で残した index.md と refe
 - オントロジーの hook と CLI は、Claude Code に加えて Codex CLI 0.153.4 の実機でも確かめました（実体ファイルの直接の読み取り・定義の `apply_patch`・エージェントからの `approve` は拒否、照会と `act` は通り、人の発言「承認 <案件>/P-0001」で承認が実行されて結果が Codex の文脈に載る）。実機の Windows では確かめていません
 - オントロジーがエージェントの正確さとトークンに与える効果は未計測です。照会（`query`/`show`）と実行（`act`）はそれぞれ 1 ターンなので、1 タスクあたりのトークンは増える見込みで、減るとすれば防げた手戻りの分だけです
 
-`bench/` は agent-ws を使うだけなら不要です。`projects/_example/` と同じく消して構いません。
+`bench/` は agent-ws を使うだけなら不要です。`scripts/ws init` の対象ではないので、消す場合は手で消してください。
 
 ## 開発
 
@@ -383,6 +385,8 @@ python3 -m unittest discover -s tests
 ```
 uv run --with rdflib --with pyshacl python3 -m unittest tests/test_onto_w3c.py tests/test_onto_parity.py
 ```
+
+見本（`projects/_example/`・`knowledges/`）を直したら `scripts/ws init --manifest` で `templates/examples.json` の一覧を作り直します。忘れると `tests/test_init.py` が落ちます。
 
 ## ライセンス
 

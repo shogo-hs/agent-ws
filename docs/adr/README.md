@@ -28,6 +28,7 @@
 | [0020](0020-codex-researcher-luna-max-read-to-end.md) | Codex の調査係は gpt-5.6-luna・max にし、researcher に「末尾まで読み切る」規則を足す | 採用 | gpt-5.4-mini は 2026-08-31 に Codex（ChatGPT ログイン）から退役。low は読み切らずに書き始め、規則を足しても 8 回中 2 回は決定の 4 割を落とす。max は 7 回とも落とさず、代償は時間 2.4 倍と luna 単価のトークン 3 倍 |
 | [0021](0021-deny-unused-eager-tools-and-effort-knob.md) | 使わない常時ロードのツール定義は `permissions.deny` で外す。effort と thinking は既定を変えず調整ノブにする | 採用 | 固定分 35,105 のうち 4,884 が案件の仕事で呼ばれないツールの定義。bench trap で処理入力 −28%・費用 −14%。effort medium は費用 −14% で 5/5 正解だが、正誤が保てると言えるのが trap だけなので既定にしない |
 | [0022](0022-operational-ontology.md) | 業務のオントロジーは「業務を動かす層」として入れる。定義は JSON、解釈と強制は scripts 側 | 採用 | 型・つながりと件数・継承・アクション（引数・前提条件・ルール・承認）を JSON に定義し、`scripts/wsonto/` が前提条件を実体の値で判定して理由つきで拒否する。承認は人だけ（発言か端末）。エージェントは実体を直接読み書きできない。定義の変更も lint と承認を通す。W3C の形式に書き出し、pySHACL と同じ判定になることをテストする |
+| [0023](0023-ws-init-removes-unchanged-examples.md) | 同梱の見本は scripts/ws init で消す。消すのは同梱時から内容を変えていないファイルだけ | 採用 | `templates/examples.json` の「パス → sha256」と一致するファイルだけ消す。書き換えたファイルと足したファイルは残り、実行結果に名前が出る。消せるファイルが残っている間だけ SessionStart が 1 行案内する |
 
 ## 書き方
 
