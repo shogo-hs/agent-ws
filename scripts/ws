@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ws — agent-ws の CLI。python3 の標準ライブラリだけで動く。
 
+  scripts/ws init              同梱の見本（架空データ）を消す
   scripts/ws --help            サブコマンド一覧
   scripts/ws task new A slug   タスクを作って現在のタスクにする
   scripts/ws hook ...          Claude Code / Codex CLI の hooks から呼ばれる
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -33,6 +35,8 @@ COMMON = ROOT / "knowledges"
 COMMON_STALE_DAYS = 90  # 共通ナレッジの updated がこれを超えたら doctor が警告する（3 ヶ月変わらない事実だけを載せる）
 TASK_STALE_DAYS = 14  # doing のまま updated がこれを超えたタスクを doctor が列挙する（done は人が言ったときか棚卸しで付ける。ADR 0018）
 TEMPLATES = ROOT / "templates"
+EXAMPLES = TEMPLATES / "examples.json"  # 同梱の見本（パス → sha256）。init が消すのはこれと内容が同じファイルだけ（ADR 0023）
+EXAMPLE_ROOTS = ("projects/_example", "knowledges")
 CURRENT = ROOT / ".ws" / "current"
 IDX_BEGIN = "<!-- ws:index -->"
 IDX_END = "<!-- /ws:index -->"
@@ -215,6 +219,57 @@ def cmd_index(args):
         targets = [p.parent for p in PROJECTS.rglob("index.md")] + [COMMON]
     n = sum(update_index(d) for d in targets)
     print(f"index.md を {n} 件更新した")
+
+
+# ---- 見本の後片付け（init） -------------------------------------------------
+
+def _digest(f: Path) -> str:
+    # テキストで読む（改行を LF に揃える）。Windows の作業ツリーが CRLF でも同梱時と同じ値になる
+    return hashlib.sha256(f.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+
+
+def _examples() -> dict:
+    return json.loads(EXAMPLES.read_text(encoding="utf-8")) if EXAMPLES.exists() else {}
+
+
+def _unchanged_examples():
+    """同梱の見本のうち、内容が同梱時のままのパスを順に返す。init が消すのはこれだけで、SessionStart はこれが 1 本でもあれば促す。
+    読めない・UTF-8 でないファイルは「変わっている」扱い。"""
+    for p, digest in _examples().items():
+        try:
+            if (ROOT / p).is_file() and _digest(ROOT / p) == digest:
+                yield p
+        except (OSError, UnicodeDecodeError):
+            continue
+
+
+def cmd_init(args):
+    if args.manifest:
+        files = [f for name in EXAMPLE_ROOTS for f in (ROOT / name).rglob("*")
+                 if f.is_file() and "__pycache__" not in f.parts]
+        manifest = dict(sorted((rel(f), _digest(f)) for f in files))
+        write(EXAMPLES, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        print(f"{rel(EXAMPLES)} を作り直した（{len(manifest)} 件）")
+        return
+    gone = set(_unchanged_examples())
+    kept = sorted(p for p in _examples() if p not in gone and (ROOT / p).is_file())
+    for p in gone:
+        (ROOT / p).unlink()
+    for name in EXAMPLE_ROOTS:  # 空になったフォルダを下から片付ける。根も空なら根ごと
+        for dirpath, _, _ in os.walk(ROOT / name, topdown=False):
+            if not any(Path(dirpath).iterdir()):
+                Path(dirpath).rmdir()
+    if COMMON.is_dir():
+        update_index(common_dir())  # 利用者のファイルが残って index.md だけ消えたなら、雛形から作り直して一覧に載せる
+    update_index(PROJECTS)
+    print(f"消した見本: {len(gone)} 件（同梱時から内容を変えていないファイル）" if gone
+          else "消す見本は無い（同梱時のままのファイルが無い）")
+    for p in kept:
+        print(f"残した: {p} — 内容が同梱時と違う（自分の内容に書き換えたものはそのまま使う。見本の行が残っていれば手で消す）")
+    if (PROJECTS / "_example").is_dir():
+        # 見本を試すとタスクの index.md やオントロジーの実体が変わり、記録のファイルも増える。中身を見ずには消せないので人に任せる
+        print("projects/_example/ にファイルが残っている。見本を試した跡ならフォルダごと消して scripts/ws index")
+    print("次: scripts/ws project new <name>")
 
 
 # ---- 案件・タスク ----------------------------------------------------------
@@ -1098,6 +1153,10 @@ def cmd_hook_session_start(args):
                 f.unlink(missing_ok=True)
     lessons = lesson_lines()
     tail = "\n人からの指摘（LESSONS.md。守る）:\n" + ("\n".join(lessons) if lessons else "（無し）")
+    if next(_unchanged_examples(), None) is not None:
+        tail += ("\n[agent-ws] 同梱の見本（projects/_example と knowledges/ の架空のデータ）が残っている。"
+                 "自分の仕事を始めるなら、人に確かめてから scripts/ws init で消す"
+                 "（消えるのは同梱時から変えていないファイルだけ）。見本を試している間はそのままでよい。")
     common = _common_block()  # 案件をまたぐ自社の事実。タスクが無い（質問に答えるだけ）ときも要る
     t = current_task(sid)
     if not t:
@@ -1358,6 +1417,10 @@ def cmd_hook_post_tool_use(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="scripts/ws", description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    q = sub.add_parser("init", help="同梱の見本（架空の案件と共通ナレッジ）を消す。消すのは同梱時から内容を変えていないファイルだけ")
+    q.add_argument("--manifest", action="store_true", help="（テンプレートの保守用）見本の一覧 templates/examples.json を作り直す")
+    q.set_defaults(fn=cmd_init)
 
     p = sub.add_parser("project", help="案件").add_subparsers(dest="sub", required=True)
     q = p.add_parser("new", help="案件フォルダを雛形から作る")

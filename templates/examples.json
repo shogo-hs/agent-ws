@@ -1,0 +1,23 @@
+{
+  "knowledges/001_組織図.md": "59c99f2699cbd875300cab86d2897d11a48fa83bd792f8b9aa2e0b8db4e13684",
+  "knowledges/glossary.md": "f4a59337c2d70d5fb59a47318ba7f4a2a2a094637931c5bcca16b322e058ba1e",
+  "knowledges/index.md": "08209703c42ed928df029dc678d0b4d8fee1580008dfa79efa926f46daddb4d2",
+  "knowledges/ontology/index.md": "4a296413784f2698c7660c1a340709b48a0b2765183fe242defb0e67d8648275",
+  "knowledges/ontology/objects.json": "57c04c4e61de6d5e8617eab8f97edd06a4fbc427b292c83f0c45711985048aae",
+  "knowledges/ontology/ontology.json": "e5bda78449a4c8a1be0b2629d1a248664fbcd01519f41e920bf0579a73f5f1d8",
+  "projects/_example/index.md": "fa0320bb524518c5b124b3a3ee07cef9e2ed950137dd79006e29bb3276bb195e",
+  "projects/_example/knowledges/001_移行方針.md": "a1fb19a3e7c8e71187d77bf1081539eb6a5e8f5ff200a232c2d64a7d42839ac2",
+  "projects/_example/knowledges/glossary.md": "bd7608d6608e454280168116d2d00d531086d53a277ef4a43ca21b859ab73c77",
+  "projects/_example/knowledges/index.md": "aa0512a7128081cdb145f8b4452fca4f208bfbd0e95f62c7592fb8125b846c04",
+  "projects/_example/knowledges/ontology/index.md": "a845eaa84f7240353536e74e3068587a12b9e37c762862c3a832d2bbca6c11b0",
+  "projects/_example/knowledges/ontology/objects.json": "a955cc3c62dc225a4687e236cccaee8ad3a15c141cdca6b64f042f4b0ee90558",
+  "projects/_example/knowledges/ontology/ontology.json": "a3fbb3312e9e8af1a82d6543d48e38d17dc070c88372001c74b9c5986ae1bf9d",
+  "projects/_example/knowledges/ontology/questions.json": "2a7db5f034332b6ee96ee957317eca490094b896933c8691136e485a59a92ad3",
+  "projects/_example/tasks/20260905_sample/index.md": "7371d1f8f93fc7c987a502563627b72368f5af0fc48586f3d4affd9dfcfc2180",
+  "projects/_example/tasks/20260905_sample/references/20260905_1241_2026-09-02_週次定例_文字起こし.md": "b94a9cd942f39220985f35c1ce145bb25622a55eba23ccd4cf2ab75fa55de7af",
+  "projects/_example/tasks/20260905_sample/references/20260905_1241_2026-09-02_週次定例_文字起こし.normalized.md": "0e8979736ae72cce59314ad9fb5dfdc531ab5e098cdcdcc6321095a6bba1cda9",
+  "projects/_example/tasks/20260905_sample/references/20260905_1241_2026-09-02_週次定例_文字起こし.orig.md": "5736f6e86f6348c5d5168b1d98f9fe1b09eb6d28dc21ac5e26b0e4d2c20d690d",
+  "projects/_example/tasks/20260905_sample/references/20260905_1241_2026-09-02_週次定例_文字起こし.summary.md": "d58d8f21c63bfece2286d468e3986388327e38bb8425e8cea0532dbd8d7ed848",
+  "projects/_example/tasks/20260905_sample/references/index.md": "1558364b3993813e0f18252cc63c7b72d4a925b93f828b5c48fb1a7a4d1d8793",
+  "projects/_example/tasks/index.md": "da7b937945b26761789d73c9acdc3475f924b2ed2764ba9aef205e52a1d98a7e"
+}
