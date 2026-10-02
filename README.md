@@ -21,13 +21,13 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 3. 実行権限が落ちていたら `chmod +x scripts/ws` を実行します（Linux / macOS）。Windows は `python scripts/ws …` と前置きして叩きます。
 4. リポジトリの**ルートで** `claude` または `codex` を起動します。
    - Claude Code: 初回にフォルダを信頼するか聞かれます。信頼すると `.claude/settings.json` の hooks が有効になります。
-   - Codex CLI（0.153 以上）: 初回にフォルダを信頼するか聞かれます。信頼したあと `/hooks` を開き、`.codex/hooks.json` の 4 つの hook を確認して trust します。
+   - Codex CLI（0.156.1 以上。調査係の gpt-6-luna がそれより前の版では拒否されます）: 初回にフォルダを信頼するか聞かれます。信頼したあと `/hooks` を開き、`.codex/hooks.json` の 4 つの hook を確認して trust します。
      信頼していない hook は警告なしに飛ばされるので、起動時に `[agent-ws] 現在のタスク` の案内が出なければ `/hooks` を見直してください。
      `.codex/config.toml` はフォルダを trusted にしたときだけ読まれます。
 5. 見本で動きを確かめ終えたら `scripts/ws init` で同梱の見本を消します。消えるのは同梱時から内容を変えていないファイルだけで、書き換えたファイルと自分で足したファイルは残ります（残したファイルは実行結果に出ます。見本を試して `projects/_example/` の中身が変わっていた場合は、フォルダごと手で消して `scripts/ws index` を実行してください）。消せる見本が残っている間は起動時にエージェントへ 1 行の案内が入ります。
 
 見本は 2 か所にあります。`projects/_example/`（架空の案件）と repo 直下の `knowledges/`（架空の自社の組織図・用語・オントロジー）です。その場で自社の内容に書き換えて使うか、まとめて `scripts/ws init` で消してから自分の内容を書くか、どちらでも構いません。
-`docs/snapshots/`（規則の根拠にした Web ページの原文。約 7.4 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
+`docs/snapshots/`（規則の根拠にした Web ページの原文。約 8.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
 
@@ -40,7 +40,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「続きをやって」 | task-resume スキル。起動時に hook が差し込んだ現在のタスクの `index.md` を読み、「次の一手」から再開する |
 | 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）か新しいセッション（Codex）を促す |
 | 「この URL を調べて」「この資料を読んで」 | `scripts/ws ref add <URL>` で本文丸ごとを references/ に残してから読む（WebFetch は hook が止めて ref add に誘導する） |
-| 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-5.6-luna）に渡し、結論と出所だけ受け取る |
+| 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-6-luna）に渡し、結論と出所だけ受け取る |
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す。Claude Code では researcher の中（fork）で走り、本線には要点（`.summary.md`）だけが戻る |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
 | 「クバネティスは Kubernetes の誤変換」「IdP 連携の担当は鈴木さん」 | `scripts/ws glossary add acme "Kubernetes" --alias "クバネティス"` / `glossary add acme "IdP 連携" --relation "→担当: 鈴木"` で用語集に足す（「関係」は任意。3 ヶ月変わらないものだけ） |
@@ -94,7 +94,7 @@ agent-ws/
 ├── .claude/agents/researcher.md  調査係サブエージェント（Claude Code・haiku。CLAUDE.md は読まない。守らせる規則は本文に書く）
 ├── .codex/hooks.json      Codex CLI の hooks 登録（中身は同じスクリプトを呼ぶ）
 ├── .codex/config.toml     Codex CLI のプロジェクト設定（web_search を外す、調査係の既定モデル）
-├── .codex/agents/researcher.toml  調査係サブエージェント（Codex CLI・gpt-5.6-luna）
+├── .codex/agents/researcher.toml  調査係サブエージェント（Codex CLI・gpt-6-luna）
 ├── .agents/skills/        スキル（両ツール共通の SKILL.md）
 │   ├── task-start/        新しいタスクを切って着手する
 │   ├── task-resume/       既存タスクを index.md から再開する

@@ -14,7 +14,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from researcher_effort import E, PROMPT, score  # noqa: E402
+from researcher_effort import E, HW_KEY, PROMPT, score  # noqa: E402
 
 RUNS = Path(E).parent / "omit"
 RESULTS = HERE / "results" / "runs_omit.jsonl"
@@ -69,7 +69,7 @@ def one(cond: str, i: int, truth: dict) -> dict:
 
 def run():
     n = int(sys.argv[2])
-    truth = json.load(open(f"{E}/truth.json"))
+    truth = {**json.load(open(f"{E}/truth.json")), "hw": HW_KEY}
     RUNS.mkdir(parents=True, exist_ok=True); RESULTS.parent.mkdir(exist_ok=True)
     with open(RESULTS, "a") as f:
         for i in range(n):
