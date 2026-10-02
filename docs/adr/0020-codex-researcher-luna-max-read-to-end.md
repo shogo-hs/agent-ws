@@ -1,5 +1,5 @@
 # 0020. Codex の調査係は gpt-5.6-luna・max にし、researcher に「末尾まで読み切る」規則を足す
-- 状態: 採用 / 日付: 2026-09-14
+- 状態: 0025 で置き換え / 日付: 2026-09-14
 
 ## 状況
 Codex 側の調査係（`.codex/agents/researcher.toml`・`[agents]` の既定・AGENTS.md の spawn_agent 指示）は gpt-5.4-mini・low だった。OpenAI は GPT-5.4 / 5.4 mini を 2026-08-31 に Codex（ChatGPT ログイン）から退役させ、置き換え先を gpt-5.6-luna と明記している（台帳 #1）。実測でも `codex exec -m gpt-5.4-mini` は 400 で拒否され、`[agents]` の既定で起動する子は全部失敗する状態だった（M1）。利用者から「gpt-5.6-luna の max などが良いのでは」と提案があった。
