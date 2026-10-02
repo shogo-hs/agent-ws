@@ -29,6 +29,7 @@
 | [0021](0021-deny-unused-eager-tools-and-effort-knob.md) | 使わない常時ロードのツール定義は `permissions.deny` で外す。effort と thinking は既定を変えず調整ノブにする | 採用 | 固定分 35,105 のうち 4,884 が案件の仕事で呼ばれないツールの定義。bench trap で処理入力 −28%・費用 −14%。effort medium は費用 −14% で 5/5 正解だが、正誤が保てると言えるのが trap だけなので既定にしない |
 | [0022](0022-operational-ontology.md) | 業務のオントロジーは「業務を動かす層」として入れる。定義は JSON、解釈と強制は scripts 側 | 採用 | 型・つながりと件数・継承・アクション（引数・前提条件・ルール・承認）を JSON に定義し、`scripts/wsonto/` が前提条件を実体の値で判定して理由つきで拒否する。承認は人だけ（発言か端末）。エージェントは実体を直接読み書きできない。定義の変更も lint と承認を通す。W3C の形式に書き出し、pySHACL と同じ判定になることをテストする |
 | [0023](0023-ws-init-removes-unchanged-examples.md) | 同梱の見本は scripts/ws init で消す。消すのは同梱時から内容を変えていないファイルだけ | 採用 | `templates/examples.json` の「パス → sha256」と一致するファイルだけ消す。書き換えたファイルと足したファイルは残り、実行結果に名前が出る。消せるファイルが残っている間だけ SessionStart が 1 行案内する |
+| [0024](0024-researcher-omit-claude-md-and-opus55-tips.md) | researcher は CLAUDE.md を読まずに起動する。途中経過の報告だけで返事を終えない。`/goal` は README で案内するだけにする | 採用 | researcher.md に `omitClaudeMd: true`（1 リクエスト目の入力 −31%、正答率は落ちない）。AGENTS.md に途中報告で返事を終えない 1 文。Skill の effort・Stop hook の自動継続・Agent Teams などは採らない |
 
 ## 書き方
 
