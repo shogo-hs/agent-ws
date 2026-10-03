@@ -874,7 +874,8 @@ class WsFlowTest(unittest.TestCase):
         task = self._task()
         src = self.root / "page.md"
         src.write_text("## Install\nIt’s licensed under the [MIT License](https://example.com/mit).\n"
-                       "| Model | Score |\n|---|---|\n| small | 69.18 |\n**Note**: runs on `aarch64` only.", encoding="utf-8")
+                       "| Model | Score |\n|---|---|\n| small | 69.18 |\n**Note**: runs on `aarch64` only.\n"
+                       "flagged ids<3\nFilter and search in one request.\n{'m': <Modifier.IDF: 'idf'>}", encoding="utf-8")
         self.ws("ref", "add", str(src), "--summary", "ページ")
         ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
         text = ref.read_text(encoding="utf-8")
@@ -882,6 +883,7 @@ class WsFlowTest(unittest.TestCase):
         ok = ("- \"It's licensed under the MIT License.\"（ライセンス節）\n"
               "- 「small | 69.18」「Note: runs on aarch64 only.」\n"
               "- \"small 69.18\" / \"runs on aarch64\"\n"
+              "- 「Filter and search in one request.」（ids<3 の < から次の > までを消さない）\n"
               "### ライセンスとスコア\n"
               "- スコアは表のセルから読んだ（括弧の無い地の文は見ない）")
         ref.write_text(text.replace(placeholder, ok), encoding="utf-8")
