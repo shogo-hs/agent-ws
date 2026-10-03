@@ -22,6 +22,9 @@ import shutil
 import statistics
 import subprocess
 import sys
+import signal
+import tempfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +40,15 @@ REPO_FILES = ["AGENTS.md", "CLAUDE.md", "LESSONS.md", "README.md", "LICENSE",
 CURRENT_TASK = "projects/acme/tasks/20260906_estimate"
 ESTIMATE_SOURCES = {"20260905_1400_単価表.md", "20260906_0930_見積依頼メール.md"}
 ALLOWED_TOOLS = "Read,Grep,Glob,Bash,Write,Edit"
+# ChatGPT ログインの Codex 用クレジット換算（100 万トークンあたり 入力・キャッシュ済み入力・出力）。
+# 出典: docs/sources/codex-token-saving.md #2（Pricing (Codex)）。単価が無いモデルは None 扱い
+CODEX_CREDITS = {
+    "gpt-6.1-sol": (50, 2.5, 250),
+    "gpt-6-sol": (50, 5, 250),
+    "gpt-6-luna": (2.5, 0.25, 12.5),
+    "gpt-6-astra": (250, 25, 1250),
+    "gpt-5.6-luna": (5, 0.5, 30),
+}
 
 PROMPTS = {
     "trap": "続きをやって。終わったら結果を報告して。",
@@ -392,10 +404,8 @@ def cmd_build(args):
 
 # ---- 1 セッション走らせて数える ----------------------------------------------------------
 
-def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: bool = False,
-               advisor: str | None = None, effort: str | None = None, extra_env: dict | None = None) -> tuple[dict, str, float, int]:
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
-    env.update(extra_env or {})  # --env MAX_THINKING_TOKENS=0 のように、Claude Code の環境変数で切る条件を測る
+def build_claude_cmd(prompt: str, model: str, max_turns: int, delegate: bool = False,
+                     advisor: str | None = None, effort: str | None = None) -> list[str]:
     allowed = ALLOWED_TOOLS + (",Agent" if delegate else "")
     cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json",
            "--setting-sources", "project", "--strict-mcp-config", "--max-turns", str(max_turns),
@@ -404,6 +414,14 @@ def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: 
         cmd += ["--advisor", advisor]  # Claude Code の Advisor（相談役モデル）を付ける。効いたかは transcript の advisor_calls で数える
     if effort:
         cmd += ["--effort", effort]  # 推論の深さ（low / medium / high）。出力（thinking）の量と正誤の交換を測る
+    return cmd
+
+
+def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: bool = False,
+               advisor: str | None = None, effort: str | None = None, extra_env: dict | None = None) -> tuple[dict, str, float, int]:
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env.update(extra_env or {})  # --env MAX_THINKING_TOKENS=0 のように、Claude Code の環境変数で切る条件を測る
+    cmd = build_claude_cmd(prompt, model, max_turns, delegate, advisor, effort)
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=rundir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, timeout=1800)
@@ -415,6 +433,107 @@ def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: 
         i = out.find("{")
         res = json.loads(out[i:]) if i >= 0 else {"result": out, "error": "no json"}
     return res, proc.stderr[-2000:], elapsed, proc.returncode
+
+
+AUTH_LOCK = threading.Lock()
+
+
+def run_codex(rundir: Path, prompt: str, model: str, effort: str | None, hooks: bool) -> tuple[dict, str, float, int, Path]:
+    """codex exec を一時 CODEX_HOME で 1 回走らせる。rollout は codex_home/sessions/ の下に残る（呼び出し側が写してから rmtree する）。
+    例外でも auth.json の写しは必ず消す。Codex がトークンを更新したら ~/.codex/auth.json に書き戻す（更新前のトークンが失効する方式に備える）。"""
+    codex_home = Path(tempfile.mkdtemp(prefix="codex-home-", dir="/tmp"))
+    src_auth, auth_dst = Path.home() / ".codex" / "auth.json", codex_home / "auth.json"
+    try:
+        with AUTH_LOCK:
+            original = src_auth.read_bytes()
+        auth_dst.write_bytes(original)
+        auth_dst.chmod(0o600)
+        (codex_home / "config.toml").write_text(f'[projects."{rundir}"]\ntrust_level = "trusted"\n', encoding="utf-8")
+        out_path = rundir.parent / (rundir.name + ".last.txt")
+        cmd = ["codex", "exec", "--json", "-m", model]
+        if effort:
+            cmd += ["-c", f'model_reasoning_effort="{effort}"']
+        cmd += ["-s", "workspace-write", "--skip-git-repo-check", "-C", str(rundir), "-o", str(out_path)]
+        if hooks:  # 条件 A（.codex/hooks.json を持つ）だけ。B/C は hooks 自体が無い
+            cmd += ["--dangerously-bypass-hook-trust"]
+        cmd.append(prompt)
+        env = {**os.environ, "CODEX_HOME": str(codex_home)}
+        t0 = time.time()
+        # codex は node から本体を起こすので、タイムアウトではプロセスグループごと止める（子が残って rundir を書き続けないように）
+        proc = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, start_new_session=True)
+        try:
+            stdout, stderr = proc.communicate(timeout=900)  # Codex に最大ターン数の指定が無いので外側で止める
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+            rc = -9
+        elapsed = time.time() - t0
+    finally:
+        if auth_dst.exists():
+            refreshed = auth_dst.read_bytes()
+            auth_dst.unlink()
+            if refreshed != original:
+                with AUTH_LOCK:
+                    if src_auth.read_bytes() == original:  # 並列の別の回が先に書き戻していなければ
+                        src_auth.write_bytes(refreshed)
+    thread_id, final_text, usage = None, "", {}
+    for line in (stdout or "").splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        t = ev.get("type")
+        if t == "thread.started":
+            thread_id = ev.get("thread_id")
+        elif t == "item.completed" and (ev.get("item") or {}).get("type") == "agent_message":
+            final_text = ev["item"].get("text", "")
+        elif t == "turn.completed":
+            usage = ev.get("usage") or {}
+    res = {"thread_id": thread_id, "final_text": final_text, "usage": usage}
+    return res, (stderr or "")[-2000:], elapsed, rc, codex_home
+
+
+def find_rollout(codex_home: Path, thread_id: str) -> Path | None:
+    for _ in range(10):
+        hits = list(codex_home.glob(f"sessions/**/rollout-*-{thread_id}.jsonl"))
+        if hits:
+            return hits[0]
+        time.sleep(1)
+    return None
+
+
+def codex_usage(rollout_path: Path) -> dict:
+    """rollout 1 本の token_usage_record を response_id で重複除去して足す（子スレッドの分を本線に足すのに使う）。"""
+    seen, u_sum, model = set(), {"in": 0, "cached": 0, "out": 0}, ""
+    for line in rollout_path.read_text(encoding="utf-8").splitlines():
+        try:
+            o = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        payload = o.get("payload") or {}
+        if o.get("type") in ("turn_context", "session_meta") and payload.get("model"):
+            model = payload["model"]
+        if o.get("type") != "token_usage_record" or payload.get("response_id") in seen:
+            continue
+        seen.add(payload.get("response_id"))
+        u = payload.get("usage") or {}
+        u_sum["in"] += u.get("input_tokens", 0); u_sum["cached"] += u.get("cached_input_tokens", 0); u_sum["out"] += u.get("output_tokens", 0)
+    return {**u_sum, "model": model}
+
+
+def codex_credits(model: str, in_total: int, cached_in: int, out_total: int) -> float | None:
+    rate = CODEX_CREDITS.get(model)
+    if not rate:
+        return None
+    a, b, c = rate
+    return ((in_total - cached_in) * a + cached_in * b + out_total * c) / 1e6
+
+
+def tilde_str(s: str) -> str:
+    """文字列の中のホームの絶対パスを ~ に置き換える（結果ファイルは公開リポジトリに入る）。"""
+    return s.replace(str(Path.home()), "~")
 
 
 def tilde(p: Path) -> str:
@@ -550,6 +669,84 @@ def analyze(tpath: Path, rundir: Path, is_other) -> dict:
     return m
 
 
+def analyze_codex(rollout_path: Path, rundir: Path, is_other) -> dict:
+    """analyze() の Codex 版。rollout（CODEX_HOME/sessions/.../rollout-*.jsonl）から数える。"""
+    seen_resp, tools = set(), []
+    m = dict(in_total=0, ctx_final=0, out_total=0, turns=0, reads=0, searches=0, writes=0,
+             other_task=0, inbox_reads=0, denied=0, cached_in=0, reasoning_out=0, model="")
+    prefix = str(rundir) + "/"
+    for line in rollout_path.read_text(encoding="utf-8").splitlines():
+        try:
+            o = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        t, payload = o.get("type"), o.get("payload") or {}
+        if t == "token_usage_record":
+            rid = payload.get("response_id")
+            if rid is not None and rid in seen_resp:
+                continue
+            if rid is not None:
+                seen_resp.add(rid)
+            u = payload.get("usage") or {}
+            m["turns"] += 1
+            m["in_total"] += u.get("input_tokens", 0)
+            m["cached_in"] += u.get("cached_input_tokens", 0)
+            m["out_total"] += u.get("output_tokens", 0)
+            m["reasoning_out"] += u.get("reasoning_output_tokens", 0)
+            m["ctx_final"] = u.get("input_tokens", 0)
+        elif t in ("turn_context", "session_meta") and payload.get("model"):
+            m["model"] = payload["model"]
+        elif t == "event_msg" and payload.get("type") == "item_completed":
+            item = payload.get("item") or {}
+            kind_name = item.get("type")
+            if kind_name == "CommandExecution":
+                cmd = item.get("command")
+                cmd = cmd[-1] if isinstance(cmd, list) else (cmd or "")
+                kind = kind_of("Bash", {"command": cmd})
+                ps = paths_in("Bash", {"command": cmd}, rundir)
+                ps = [p for p in ps if not p.startswith(str(Path.home() / ".codex"))]  # Codex 自身は作業スペースの外
+                if kind in ("read", "search", "write"):
+                    m[kind + ("es" if kind == "search" else "s")] += 1
+                if kind in ("read", "search") and any(is_other(p) for p in ps):
+                    m["other_task"] += 1
+                if kind in ("read", "search") and any(p.startswith("inbox/") or "/inbox/" in p for p in ps):
+                    m["inbox_reads"] += 1
+                tools.append(["bash", kind, tilde_str(cmd[:200])])
+            elif kind_name == "FileChange":
+                changes = item.get("changes")
+                if isinstance(changes, dict):
+                    raw_paths = list(changes.keys())
+                elif isinstance(changes, list):
+                    raw_paths = [c.get("path", "") if isinstance(c, dict) else str(c) for c in changes]
+                else:
+                    raw_paths = []
+                for rp in raw_paths:
+                    if not rp:
+                        continue
+                    rel = rp[len(prefix):] if rp.startswith(prefix) else rp
+                    m["writes"] += 1
+                    if is_other(rel):
+                        m["other_task"] += 1
+                    tools.append(["write", "FileChange", tilde_str(rel)])
+        elif t == "response_item" and payload.get("type") in ("custom_tool_call_output", "function_call_output"):
+            out_text = payload.get("output")
+            out_text = out_text if isinstance(out_text, str) else json.dumps(out_text, ensure_ascii=False)
+            if "blocked by PreToolUse hook" in out_text and "[agent-ws]" in out_text:  # Command / Tool call の両方の文言
+                m["denied"] += 1
+                blocked = re.search(r"\. Command: (.+?)(?:\\n|\"|$)", out_text)
+                if blocked:  # 拒否されたコマンドは CommandExecution に出ないので、ここで同じ判定に通す
+                    cmd = blocked.group(1)
+                    kind = kind_of("Bash", {"command": cmd})
+                    ps = paths_in("Bash", {"command": cmd}, rundir)
+                    if kind in ("read", "search", "write"):
+                        m[kind + ("es" if kind == "search" else "s")] += 1
+                    if kind in ("read", "search") and any(is_other(x) for x in ps):
+                        m["other_task"] += 1
+                    tools.append(["bash", "denied", tilde_str(cmd[:200])])
+    m["tools"] = tools
+    return m
+
+
 def verdict_estimate(text: str) -> str:
     t = text.replace(",", "").replace("，", "")
     hits = {k for k, (a, b) in ANSWERS.items() if a in t or b in t}
@@ -599,29 +796,67 @@ def doc_location(changed: list[str], cond: str) -> str:
 def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, i: int,
                 rundir: Path, prompt: str, baseline: set[str], max_turns: int, chain_id: str | None,
                 delegate: bool = False, advisor: str | None = None, effort: str | None = None,
-                extra_env: dict | None = None) -> dict:
+                extra_env: dict | None = None, agent: str = "claude") -> dict:
     before = snapshot(rundir)
-    res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate, advisor, effort, extra_env)
+    if agent == "codex":
+        res, stderr, elapsed, rc, codex_home = run_codex(rundir, prompt, model, effort, hooks=(cond == "A"))
+    else:
+        res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate, advisor, effort, extra_env)
     after = snapshot(rundir)
     changed = sorted(p for p, h in after.items() if before.get(p) != h)
     changed_text = changed_text_of(rundir, changed)
-    final = res.get("result") or ""
-    sid = res.get("session_id", "")
-    tpath = find_transcript(sid) if sid else None
-    met = analyze(tpath, rundir, other_task_pred(cond, exp, stage, baseline)) if tpath else {}
+    is_other = other_task_pred(cond, exp, stage, baseline)
+
+    if agent == "codex":
+        final = res.get("final_text") or ""
+        sid = res.get("thread_id") or ""
+        tpath, sub_usage = None, []
+        try:
+            found = find_rollout(codex_home, sid) if sid else None
+            if found:  # 一時 CODEX_HOME は消すので、rollout だけ rundir の横（リポジトリの外）に残して rescore できるようにする
+                stem = rundir.name + (f".s{stage}" if stage else "")
+                tpath = rundir.parent / f"{stem}.rollout.jsonl"
+                shutil.copy(found, tpath)
+                for i_sub, other in enumerate(p for p in codex_home.glob("sessions/**/rollout-*.jsonl") if p != found):
+                    dst = rundir.parent / f"{stem}.sub{i_sub}.rollout.jsonl"  # spawn_agent の子スレッド（researcher）
+                    shutil.copy(other, dst)
+                    sub_usage.append(codex_usage(dst))
+            met = analyze_codex(tpath, rundir, is_other) if tpath else {}
+        finally:
+            shutil.rmtree(codex_home, ignore_errors=True)
+        if sub_usage:
+            met["delegates"] = len(sub_usage)
+            met["sub_in"] = sum(u["in"] for u in sub_usage)
+            met["sub_credits"] = sum(codex_credits(u["model"] or model, u["in"], u["cached"], u["out"]) or 0 for u in sub_usage)
+        transcript, cost_usd, num_turns, model_usage, permission_denials = (str(tpath) if tpath else None), None, None, {}, 0
+        is_error = rc != 0
+    else:
+        final = res.get("result") or ""
+        sid = res.get("session_id", "")
+        tpath = find_transcript(sid) if sid else None
+        met = analyze(tpath, rundir, is_other) if tpath else {}
+        transcript = tilde(tpath) if tpath else None
+        cost_usd, num_turns = res.get("total_cost_usd"), res.get("num_turns")
+        model_usage = {k: v.get("costUSD") for k, v in (res.get("modelUsage") or {}).items()}
+        permission_denials = len(res.get("permission_denials") or [])
+        is_error = res.get("is_error")
+
     text_all = final + "\n" + changed_text
     rec = dict(ts=datetime.now().isoformat(timespec="seconds"), exp=exp, stage=stage, chain_id=chain_id,
                scale=scale, cond=cond, model=model, delegate=delegate, advisor=advisor, effort=effort, env=extra_env or {},
-               i=i, rundir=str(rundir), session_id=sid,
-               model_usage={k: v.get("costUSD") for k, v in (res.get("modelUsage") or {}).items()},
-               elapsed=round(elapsed, 1), returncode=rc, num_turns=res.get("num_turns"),
-               cost_usd=res.get("total_cost_usd"), is_error=res.get("is_error"),
-               permission_denials=len(res.get("permission_denials") or []),
-               transcript=tilde(tpath) if tpath else None, stderr=stderr[-500:] if rc else "",
+               agent=agent, i=i, rundir=str(rundir), session_id=sid, thread_id=sid if agent == "codex" else None,
+               model_usage=model_usage, elapsed=round(elapsed, 1), returncode=rc, num_turns=num_turns,
+               cost_usd=cost_usd, is_error=is_error, permission_denials=permission_denials,
+               transcript=transcript, stderr=tilde_str(stderr[-500:]) if rc else "",
                changed_files=changed, has_next=bool(re.search(r"次の一手|次回|次のセッション|TODO|残作業", changed_text)),
                final_text=final[:6000], changed_text=changed_text[:30000],
                baseline=sorted(baseline) if exp == "chain" else None)
     rec.update({k: v for k, v in met.items()})
+    rec["model"] = rec.get("model") or model  # 変名できなかったとき（transcript 無し等）は呼び出し時の指定を残す
+    rec["cached_in"] = rec.get("cached_in", 0)
+    rec["reasoning_out"] = rec.get("reasoning_out", 0)
+    rec["credits"] = (codex_credits(rec["model"], rec.get("in_total", 0), rec["cached_in"], rec.get("out_total", 0)) or 0) + (rec.get("sub_credits") or 0) \
+        if agent == "codex" else None  # 子スレッド（researcher）の分も足す
     if exp in ("trap", "chain", "base"):
         rec["verdict"] = verdict_estimate(text_all)
         rec["task_pick"] = pick_task(rec["verdict"], final, changed)
@@ -654,8 +889,9 @@ def strip_advisor_env(rundir: Path):
 
 def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, results: Path, max_turns: int,
            delegate: bool = False, advisor: str | None = None, effort: str | None = None,
-           extra_env: dict | None = None) -> list[dict]:
-    suffix = ("d" if delegate else "") + ("v" if advisor else "") + (f"e{effort[0]}" if effort else "") + ("x" if extra_env else "")  # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない
+           extra_env: dict | None = None, agent: str = "claude") -> list[dict]:
+    # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない。codex は k を混ぜて claude の rundir と衝突させない
+    suffix = ("k" if agent == "codex" else "") + ("d" if delegate else "") + ("v" if advisor else "") + (f"e{effort[0]}" if effort else "") + ("x" if extra_env else "")
     rundir = RUNS_DIR / tag / f"{exp}_{scale}_{model}_{cond}{i}{suffix}"
     state = "fresh" if exp == "chain" else "doing"
     build(cond, scale, state, rundir)
@@ -665,46 +901,55 @@ def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, resul
     recs = []
     if exp == "chain":
         cid = f"{tag}_{scale}_{model}_{cond}{i}{suffix}"
-        r1 = run_session(exp, 1, scale, cond, model, i, rundir, PROMPTS["chain1"], baseline, max_turns, cid, delegate, advisor, effort, extra_env)
+        r1 = run_session(exp, 1, scale, cond, model, i, rundir, PROMPTS["chain1"], baseline, max_turns, cid, delegate, advisor, effort, extra_env, agent)
         append_result(r1, results)
-        r2 = run_session(exp, 2, scale, cond, model, i, rundir, PROMPTS["chain2"], baseline, max_turns, cid, delegate, advisor, effort, extra_env)
+        r2 = run_session(exp, 2, scale, cond, model, i, rundir, PROMPTS["chain2"], baseline, max_turns, cid, delegate, advisor, effort, extra_env, agent)
         append_result(r2, results)
         recs = [r1, r2]
     else:
         r = run_session(exp, None, scale, cond, model, i, rundir, PROMPTS[exp], baseline,
-                        1 if exp == "base" else max_turns, None, delegate, advisor, effort, extra_env)
+                        1 if exp == "base" else max_turns, None, delegate, advisor, effort, extra_env, agent)
         append_result(r, results)
         recs = [r]
     for r in recs:
         print(f"[{r['ts']}] {exp}{'/S' + str(r['stage']) if r['stage'] else ''} {scale} {model} {cond}{i}: "
-              f"in={r.get('in_total')} ctx={r.get('ctx_final')} cost={r.get('cost_usd')} turns={r.get('turns')} "
+              f"in={r.get('in_total')} ctx={r.get('ctx_final')} cost={r.get('cost_usd')} credits={r.get('credits')} turns={r.get('turns')} "
               f"other={r.get('other_task')} inbox={r.get('inbox_reads')} denied={r.get('denied')} "
               f"verdict={r.get('verdict', r.get('required_n'))} {r.get('elapsed')}s", flush=True)
     return recs
 
 
 def cmd_run(args):
+    if args.agent == "codex":
+        if args.exp == "base":
+            sys.exit("agent=codex: exp=base は対象外（1 ターン固定の比較は claude 専用）")
+        if args.delegate or args.advisor or args.env:
+            sys.exit("agent=codex: --delegate/--advisor/--env は claude 専用")
     tag = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
     results = Path(args.results).resolve() if args.results else RESULTS / "runs.jsonl"
     conds = args.conds.split(",")
     jobs = [(cond, i) for i in range(args.n) for cond in conds]  # A0 B0 C0 A1 ... と交互に
     extra_env = dict(kv.split("=", 1) for kv in (args.env or []))
-    print(f"tag={tag} exp={args.exp} scale={args.scale} model={args.model} jobs={len(jobs)} -> {results}", flush=True)
+    print(f"tag={tag} agent={args.agent} exp={args.exp} scale={args.scale} model={args.model} jobs={len(jobs)} -> {results}", flush=True)
     if args.jobs > 1:
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env) for c, i in jobs]
+            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env, args.agent) for c, i in jobs]
             for f in futs:
                 f.result()
     else:
         for c, i in jobs:
-            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env)
+            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env, args.agent)
 
 
 def cmd_rescore(args):
-    """transcript から数え直す（数え方を直したあとに全行へ適用する）。正誤は最終応答と差分から再判定する。"""
+    """transcript（codex は rundir の横に残した rollout）から数え直す（数え方を直したあとに全行へ適用する）。正誤は最終応答と差分から再判定する。"""
     path = Path(args.results).resolve() if args.results else RESULTS / "runs.jsonl"
     recs, out = load_results(path), []
     for r in recs:
+        agent = r.get("agent", "claude")
+        if agent != args.agent:
+            out.append(r)
+            continue
         tp, rundir = r.get("transcript"), Path(r["rundir"])
         changed = r.get("changed_files", [])
         baseline = set(r.get("baseline") or [])
@@ -712,7 +957,10 @@ def cmd_rescore(args):
             baseline = set(snapshot(rundir)) - set(changed)  # 実行前のツリー = 今のツリー − 書き換えたもの
         tp = str(Path(tp).expanduser()) if tp else tp
         if tp and Path(tp).exists():
-            r.update(analyze(Path(tp), rundir, other_task_pred(r["cond"], r["exp"], r.get("stage"), baseline)))
+            met = (analyze_codex if agent == "codex" else analyze)(Path(tp), rundir, other_task_pred(r["cond"], r["exp"], r.get("stage"), baseline))
+            r.update({k: v for k, v in met.items() if not (k == "model" and not v)})
+            if agent == "codex":
+                r["credits"] = (codex_credits(r.get("model") or "", r.get("in_total", 0), r.get("cached_in", 0), r.get("out_total", 0)) or 0) + (r.get("sub_credits") or 0)
         if r.get("stage") == 1 and "changed_text" not in r:
             out.append(r)  # S2 が同じファイルを書き換えた後なので、S1 の正誤は実行時の判定を保つ
             continue
@@ -754,6 +1002,8 @@ def fmt(v, key):
         return "—"
     if key == "cost_usd":
         return f"{v:.3f}"
+    if key == "credits":  # Codex（ChatGPT ログイン）は $ が無いのでクレジット表記
+        return f"{v:.2f}cr"
     if key in ("in_total", "ctx_final"):
         return f"{v:,.0f}"
     return f"{v:g}"
@@ -776,19 +1026,25 @@ KEYS = ["in_total", "ctx_final", "cost_usd", "turns", "reads", "searches", "othe
 
 
 def cmd_summary(args):
-    recs = load_results(Path(args.results).resolve() if args.results else RESULTS / "runs.jsonl")
+    src = Path(args.results).resolve() if args.results else RESULTS / "runs.jsonl"
+    recs = load_results(src)
+    # runs.jsonl 以外（runs_codex.jsonl 等）の集計で、Claude の summary.md / summary.json を上書きしない
+    stem = "summary" if src.name == "runs.jsonl" else src.stem + ".summary"
     if args.tag:
-        recs = [r for r in recs if r.get("chain_id", "").startswith(args.tag) or args.tag in r.get("rundir", "")]
+        recs = [r for r in recs if (r.get("chain_id") or "").startswith(args.tag) or args.tag in r.get("rundir", "")]
     groups: dict[tuple, list[dict]] = {}
     for r in recs:
-        groups.setdefault((r["exp"], r.get("stage"), r["scale"], r["model"], r["cond"], r.get("delegate", False)), []).append(r)
+        groups.setdefault((r["exp"], r.get("stage"), r["scale"], r["model"], r["cond"], r.get("delegate", False),
+                           r.get("agent", "claude")), []).append(r)
     out = {"groups": {}, "pairs": {}}
-    lines = ["| 実験 | 規模 | モデル | 条件 | 委譲 | n | 処理した入力 | 最終文脈 | 費用 USD | ターン | Read | 検索 | 他タスク | inbox | 拒否 | 委譲回数 | 正誤 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for key in sorted(groups, key=lambda k: (k[0], k[1] or 0, k[2], k[3], k[4], k[5])):
-        exp, stage, scale, model, cond, delegate = key
+    lines = ["| 実験 | 規模 | モデル | 条件 | エージェント | 委譲 | n | 処理した入力 | 最終文脈 | 費用 USD/クレジット | ターン | Read | 検索 | 他タスク | inbox | 拒否 | 委譲回数 | 正誤 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for key in sorted(groups, key=lambda k: (k[0], k[1] or 0, k[2], k[3], k[4], k[5], k[6])):
+        exp, stage, scale, model, cond, delegate, agent = key
         g = groups[key]
         cells = {k: stat_cell([r.get(k) for r in g], k) for k in KEYS}
+        if agent == "codex":  # ドルの費用が無いのでクレジット（cr 表記）を同じ列に出す
+            cells["cost_usd"] = stat_cell([r.get("credits") for r in g], "credits")
         if exp == "newtask":
             reviewed = [r.get("stale_reviewed") for r in g if r.get("stale_reviewed") is not None]
             verdict = (f"必須 {stat_cell([r.get('required_n') for r in g], 'n')} / 混入 機械 {sum(r.get('stale_n', 0) for r in g)}"
@@ -805,27 +1061,37 @@ def cmd_summary(args):
                 vc[k] = vc.get(k, 0) + 1
             verdict = " ".join(f"{k}×{v}" for k, v in sorted(vc.items()))
         label = f"{exp}{'/S' + str(stage) if stage else ''}"
-        lines.append(f"| {label} | {scale} | {short_model(model)} | {cond} | {'あり' if delegate else 'なし'} | {len(g)} | "
+        lines.append(f"| {label} | {scale} | {short_model(model)} | {cond} | {agent} | {'あり' if delegate else 'なし'} | {len(g)} | "
                      + " | ".join(cells[k] for k in KEYS) + f" | {verdict} |")
-        out["groups"]["/".join(map(str, key))] = {k: [r.get(k) for r in g] for k in KEYS + ["verdict", "required_n", "stale_n", "doc_location"]}
-    plines = ["", "| 実験 | 規模 | モデル | 委譲 | 対 | p(処理した入力) | p(費用) | p(他タスク) |", "|---|---|---|---|---|---|---|---|"]
+        out["groups"]["/".join(map(str, key))] = {k: [r.get(k) for r in g] for k in KEYS + ["verdict", "required_n", "stale_n", "doc_location", "credits"]}
+    plines = ["", "| 実験 | 規模 | モデル | エージェント | 委譲 | 対 | p(処理した入力) | p(費用/クレジット) | p(他タスク) |",
+              "|---|---|---|---|---|---|---|---|---|"]
     for key in sorted({k[:4] for k in groups}):
         for delegate in sorted({k[5] for k in groups if k[:4] == key}):
-            a = groups.get(key + ("A", delegate))
-            for other in ("B", "C"):
-                b = groups.get(key + (other, delegate))
-                if not a or not b:
-                    continue
-                ps = {k: perm_p([r.get(k) for r in a if r.get(k) is not None], [r.get(k) for r in b if r.get(k) is not None])
-                      for k in ("in_total", "cost_usd", "other_task")}
-                out["pairs"]["/".join(map(str, key)) + f"/{delegate}/A-{other}"] = ps
-                exp, stage, scale, model = key
-                plines.append(f"| {exp}{'/S' + str(stage) if stage else ''} | {scale} | {short_model(model)} | {'あり' if delegate else 'なし'} | A/{other} | " +
-                              " | ".join("—" if v is None else f"{v:.3f}" for v in ps.values()) + " |")
+            for agent in sorted({k[6] for k in groups if k[:4] == key and k[5] == delegate}):
+                a = groups.get(key + ("A", delegate, agent))
+                for other in ("B", "C"):
+                    b = groups.get(key + (other, delegate, agent))
+                    if not a or not b:
+                        continue
+                    cost_key = "credits" if agent == "codex" else "cost_usd"
+                    ps = {
+                        "in_total": perm_p([r.get("in_total") for r in a if r.get("in_total") is not None],
+                                           [r.get("in_total") for r in b if r.get("in_total") is not None]),
+                        "cost": perm_p([r.get(cost_key) for r in a if r.get(cost_key) is not None],
+                                      [r.get(cost_key) for r in b if r.get(cost_key) is not None]),
+                        "other_task": perm_p([r.get("other_task") for r in a if r.get("other_task") is not None],
+                                             [r.get("other_task") for r in b if r.get("other_task") is not None]),
+                    }
+                    out["pairs"]["/".join(map(str, key)) + f"/{delegate}/{agent}/A-{other}"] = ps
+                    exp, stage, scale, model = key
+                    plines.append(f"| {exp}{'/S' + str(stage) if stage else ''} | {scale} | {short_model(model)} | {agent} | "
+                                  f"{'あり' if delegate else 'なし'} | A/{other} | " +
+                                  " | ".join("—" if v is None else f"{v:.3f}" for v in ps.values()) + " |")
     text = "\n".join(lines + plines)
     print(text)
-    write(RESULTS / "summary.md", text + "\n")
-    write(RESULTS / "summary.json", json.dumps(out, ensure_ascii=False, indent=1))
+    write(RESULTS / f"{stem}.md", text + "\n")
+    write(RESULTS / f"{stem}.json", json.dumps(out, ensure_ascii=False, indent=1))
 
 
 # ---- 図 --------------------------------------------------------------------------------
@@ -942,7 +1208,7 @@ def cmd_report(args):
 
 # ---- 引数 ------------------------------------------------------------------------------
 
-def main(argv=None):
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="bench/run.py", description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("build", help="実行ディレクトリを 1 つ組む")
@@ -955,19 +1221,23 @@ def main(argv=None):
     p.add_argument("--exp", choices=["trap", "chain", "newtask", "base"], required=True)
     p.add_argument("--scale", choices=["small", "large"], default="large")
     p.add_argument("--model", default="sonnet")
+    p.add_argument("--agent", choices=["claude", "codex"], default="claude",
+                   help="codex は codex exec を使う（--delegate/--advisor/--env と base は claude 専用）")
     p.add_argument("--conds", default="A,B,C")
     p.add_argument("-n", type=int, default=5)
     p.add_argument("--jobs", type=int, default=1)
     p.add_argument("--max-turns", type=int, default=30)
     p.add_argument("--delegate", action="store_true",
                    help="本線が researcher（haiku）に委譲できる条件。--allowedTools に Agent を足す")
-    p.add_argument("--advisor", help="Claude Code の --advisor に渡す相談役モデル（opus 等）。付けた条件は rundir に v が付く")
-    p.add_argument("--effort", choices=["low", "medium", "high"], help="Claude Code の --effort。付けた条件は rundir に e<頭文字> が付く")
+    p.add_argument("--advisor", help="Claude Code の --advisor に渡す相談役モデル(opus 等)。付けた条件は rundir に v が付く")
+    p.add_argument("--effort", choices=["low", "medium", "high"], help="推論の深さ（Claude Code の --effort / Codex の model_reasoning_effort）。付けた条件は rundir に e<頭文字> が付く")
     p.add_argument("--env", action="append", metavar="KEY=VAL", help="Claude Code に渡す環境変数（例: MAX_THINKING_TOKENS=0）。付けた条件は rundir に x が付く")
     p.add_argument("--tag")
     p.add_argument("--results")
     p.set_defaults(fn=cmd_run)
     p = sub.add_parser("rescore", help="transcript から数え直す")
+    p.add_argument("--agent", choices=["claude", "codex"], default="claude",
+                   help="どちらの行を数え直すか")
     p.add_argument("--results")
     p.set_defaults(fn=cmd_rescore)
     p = sub.add_parser("summary", help="集計する")
@@ -978,7 +1248,11 @@ def main(argv=None):
     p.add_argument("--results")
     p.set_defaults(fn=cmd_fig)
     sub.add_parser("report", help="報告書に貼る HTML 断片を作る").set_defaults(fn=cmd_report)
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     args.fn(args)
 
 
