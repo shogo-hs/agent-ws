@@ -167,3 +167,14 @@ env -u CLAUDECODE claude -p "<依頼文>" --model sonnet|haiku --output-format j
 - 文字起こしの用語集正規化（置換は決定的で、効果は前処理側にある）
 - compact 後の再注入（headless で多ターンの往復を再現しにくい）
 - Opus・GPT 系のモデル
+
+## 固定分の内訳（`fixed_parts.py`）
+
+1 ターン（「OK とだけ答えて」）を、A と、AGENTS.md・スキル・SessionStart の注入・researcher の定義を 1 つずつ外した 4 変種で走らせ（Claude は各 2 回、Codex は各 1 回）、A との差を部品のトークンとして `results/fixed_parts.jsonl` に追記します。
+
+```
+python3 bench/fixed_parts.py                  # A と 4 変種
+python3 bench/fixed_parts.py A --label A2     # 規約を変えた別の写し（git worktree など）の中で叩き、その版の固定分を測る
+```
+
+規約を変えた版 A2 と今の版 A を `run` で比べるときは、`run.py` が自分のいるリポジトリを条件 A として組むので、2 つの写しのそれぞれで `run` を叩き、`--tag` と `--results` を分けます。2026-10-03 の比較（ADR 0027）は `results/runs_trim.jsonl` と `runs_trim.summary.md` です。

@@ -1,0 +1,18 @@
+{"agent": "claude", "variant": "A", "i": 0, "fixed": 18822, "cost": 0.048712599999999995}
+{"agent": "claude", "variant": "A", "i": 1, "fixed": 18822, "cost": 0.003808}
+{"agent": "codex", "variant": "A", "i": 0, "fixed": 17380, "credits": 0.87025, "out": 5}
+{"agent": "claude", "variant": "noAGENTS", "i": 0, "fixed": 14773, "cost": 0.0325166}
+{"agent": "claude", "variant": "noAGENTS", "i": 1, "fixed": 14773, "cost": 0.0029982000000000003}
+{"agent": "codex", "variant": "noAGENTS", "i": 0, "fixed": 14111, "credits": 0.7068, "out": 5}
+{"agent": "claude", "variant": "noSkills", "i": 0, "fixed": 18153, "cost": 0.0460366}
+{"agent": "claude", "variant": "noSkills", "i": 1, "fixed": 18153, "cost": 0.0036742000000000003}
+{"agent": "codex", "variant": "noSkills", "i": 0, "fixed": 16726, "credits": 0.83755, "out": 5}
+{"agent": "claude", "variant": "noHook", "i": 0, "fixed": 17545, "cost": 0.0436046}
+{"agent": "claude", "variant": "noHook", "i": 1, "fixed": 17545, "cost": 0.0035526000000000004}
+{"agent": "codex", "variant": "noHook", "i": 0, "fixed": 16383, "credits": 0.8204, "out": 5}
+{"agent": "claude", "variant": "noResearcher", "i": 0, "fixed": 18701, "cost": 0.048228599999999996}
+{"agent": "claude", "variant": "noResearcher", "i": 1, "fixed": 18701, "cost": 0.0037838000000000004}
+{"agent": "codex", "variant": "noResearcher", "i": 0, "fixed": 16847, "credits": 0.37544, "out": 5}
+{"agent": "claude", "variant": "A2", "i": 0, "fixed": 17862, "cost": 0.0448726}
+{"agent": "claude", "variant": "A2", "i": 1, "fixed": 17862, "cost": 0.0036160000000000007}
+{"agent": "codex", "variant": "A2", "i": 0, "fixed": 16591, "credits": 0.8308, "out": 5}

@@ -1169,10 +1169,12 @@ def cmd_hook_session_start(args):
                  "（消えるのは同梱時から変えていないファイルだけ）。見本を試している間はそのままでよい。")
     common = _common_block()  # 案件をまたぐ自社の事実。タスクが無い（質問に答えるだけ）ときも要る
     t = current_task(sid)
+    # 上限（INJECT_MAX）には数えない: 以前は AGENTS.md にあった分で、入れても Codex の 8,000 字に収まる
+    onto = _onto_block(project_of(t) if t else None)
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
               "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。\n"
-              + _last_done_block() + common + tail)
+              + _last_done_block() + common + onto + tail)
         return
     meta, body = read_frontmatter(t / "index.md")
     proj = project_of(t)
@@ -1181,7 +1183,6 @@ def cmd_hook_session_start(args):
     pidx = PROJECTS / str(proj) / "index.md"
     rules = _section(read_frontmatter(pidx)[1] if pidx.exists() else "", "この案件での決まりごと", 600)
     head = (f"[agent-ws] 現在のタスク: {rel(t)}（{meta.get('title', '')} / {meta.get('status', '')}）\n"
-            "他の tasks/ 配下は読まない（hook が拒否する）。\n"
             f"この案件での決まりごと（projects/{proj}/index.md より）: {rules}\n")
     # index.md の全文とナレッジの一覧をここで渡し、Read で読み直す 1〜2 ターン分の文脈の払い直しを省く
     # （ターンごとに会話全体を再送する。bench では 1 ターン ≒ 32k トークンの cache read）。
@@ -1190,11 +1191,11 @@ def cmd_hook_session_start(args):
     full = (head + f"ナレッジの一覧（projects/{proj}/knowledges/index.md より。必要なものだけ開く）:\n{know}\n" + common
             + f"--- {rel(t)}/index.md の全文（Read で読み直さない。更新は Edit で）---\n{body.strip()}\n---")
     if len(full) + len(tail) <= INJECT_MAX:
-        _emit_context(full + tail)
+        _emit_context(full + onto + tail)
         return
     _emit_context(head + f"まず {rel(t)}/index.md を読む。ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。"
                   + ("共通ナレッジ（自社の組織・用語）は knowledges/index.md から。" if common else "") + "\n"
-                  f"次の一手（index.md より）: {_section(body, '次の一手')}" + tail)
+                  f"次の一手（index.md より）: {_section(body, '次の一手')}" + onto + tail)
 
 
 def _last_done_block() -> str:
@@ -1208,6 +1209,23 @@ def _last_done_block() -> str:
     return (f"直前に完了したタスク: {text}（{meta.get('title', '')}）。「続きをやって」と言われたら、"
             f"下の次の一手から新しいタスクを切る（完了したタスクのフォルダは読まない）。\n"
             f"その次の一手（index.md より）: {_section(body, '次の一手', 600)}\n")
+
+
+# 定義の無い利用者に毎ターン送らないよう、AGENTS.md ではなくここで定義があるときだけ渡す
+ONTO_RULES = ("\n業務の状態はオントロジー経由で（この案件か自社共通に型が定義されている）: "
+              "読むのは `scripts/ws onto query <型> --where …` と `show <型:id>`（`types` / `describe` で型とアクションを確認）で、"
+              "実体のファイルは直接読まない（hook が拒否する）。変えるのは `scripts/ws onto act <アクション> 名前=値 …` だけで、"
+              "金額や台数は自分で計算せず返り値を使い、拒否されたら理由文に従って前提を直す（無理に通そうとしない）。"
+              "`実行待ち P-0001` が返ったら人に「承認 P-0001」と送ってもらうよう伝えて待つ（自分では承認できない）。"
+              "型・つながり・アクションの追加や修正は ontology-define スキルへ。照会と実行は 1 回の Bash にまとめてターンを減らす。")
+
+
+def _onto_block(proj) -> str:
+    """共通か proj にオントロジーの定義があるときだけ ONTO_RULES を返す（判定は load_glossary と同じ）。"""
+    defs = [COMMON / "ontology" / "ontology.json"]
+    if proj:
+        defs.append(PROJECTS / str(proj) / "knowledges" / "ontology" / "ontology.json")
+    return ONTO_RULES if any(d.exists() for d in defs) else ""
 
 
 def _common_block() -> str:
