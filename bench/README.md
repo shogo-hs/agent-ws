@@ -55,14 +55,14 @@ A は `.claude/settings.json` の `env` で Advisor を外しているので（A
 
 ## 調査係のモデルと推論量（`researcher_effort.py`）
 
-Claude Code の A/B/C とは別に、Codex の調査係（`.codex/agents/researcher.toml`）に使うモデルと `model_reasoning_effort` を決めるための実測です（ADR 0020）。
+Claude Code の A/B/C とは別に、Codex の調査係（`.codex/agents/researcher.toml`）に使うモデルと `model_reasoning_effort` を決めるための実測です（ADR 0020・0025）。
 架空の会議文字起こし（1,134 行・69 KB。決定 20・宿題 15・却下や検討中の案 12 を雑談に埋めた）から決定事項と宿題を `out.md` に抜かせ、
 正解の語が正しい節にあるか・却下案が混ざっていないかを数えます（47 項目の正答率）。`codex exec --json` の `turn.completed` からトークンも取ります。
 
 ```
 WS_BENCH_RUNS=/var/tmp/agent-ws-bench uv run python bench/researcher_effort.py gen
-uv run python bench/researcher_effort.py run 3 bare gpt-5.6-luna:low,gpt-5.6-luna:medium,gpt-5.6-luna:max   # 素の依頼文
-uv run python bench/researcher_effort.py run 4 rule gpt-5.6-luna:low                                          # researcher に足した「末尾まで読み切る」規則つき
+uv run python bench/researcher_effort.py run 3 bare gpt-5.6-luna:low,gpt-5.6-luna:medium,gpt-5.6-luna:max   # 素の依頼文（ADR 0020）
+uv run python bench/researcher_effort.py run 5 rule gpt-5.6-luna:max,gpt-6-luna:high,gpt-6-luna:max         # researcher に足した「末尾まで読み切る」規則つき（ADR 0025）
 uv run python bench/researcher_effort.py summary
 ```
 

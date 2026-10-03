@@ -6,8 +6,8 @@
 python3 の標準ライブラリだけで動く。材料は `WS_BENCH_RUNS`（既定 /var/tmp/agent-ws-bench）の下に置く。
 
   bench/researcher_effort.py gen                                          # 材料を作る（乱数固定）
-  bench/researcher_effort.py run 3 bare gpt-5.6-luna:low,gpt-5.6-luna:max # 素の依頼文で各 3 回
-  bench/researcher_effort.py run 4 rule gpt-5.6-luna:low                  # 「末尾まで読み切る」規則を足した依頼文で
+  bench/researcher_effort.py run 3 bare gpt-6-luna:high,gpt-6-luna:max   # 素の依頼文で各 3 回
+  bench/researcher_effort.py run 5 rule gpt-5.6-luna:max,gpt-6-luna:high # 「末尾まで読み切る」規則を足した依頼文で
   bench/researcher_effort.py summary                                      # モデル×推論量×規則ごとの中央値
 """
 import json, os, random, re, shutil, statistics, subprocess, sys, tempfile, time
@@ -30,7 +30,8 @@ HW = [("佐藤", "9 月 20 日", "ログ保持のコスト試算"), ("田中", "
       ("加藤", "9 月 19 日", "Valkey の永続化設定"), ("吉田", "9 月 29 日", "GitHub Actions の runner 台数見積"), ("山田", "10 月 2 日", "顧客マスタの項目定義"),
       ("松本", "9 月 24 日", "障害訓練の日程調整"), ("井上", "10 月 6 日", "Go 移行の工数見積"), ("木村", "9 月 27 日", "契約書ドラフト")]
 # 宿題は言い回しが変わる（「互換性調査」→「互換性を調査する」）ので、採点はこの 1 語で当てる
-HW_KEY = ["ログ保持", "PoC 手順書", "移行手順", "法務", "バックアップ", "負荷試験", "ダッシュボード", "互換性", "再見積", "永続化", "runner", "項目定義", "障害訓練", "工数", "契約書"]
+# 「項目定義」は「顧客マスタの項目を定義する」の言い換えを落とした（ADR 0025）ので「項目」で当てる
+HW_KEY = ["ログ保持", "PoC 手順書", "移行手順", "法務", "バックアップ", "負荷試験", "ダッシュボード", "互換性", "再見積", "永続化", "runner", "項目", "障害訓練", "工数", "契約書"]
 DIS = [("Datadog への移行", "Datadog", "却下"), ("MySQL 8 の採用", "MySQL 8", "却下"), ("Redis Enterprise の契約", "Redis Enterprise", "却下"),
        ("Auth0 の利用", "Auth0", "却下"), ("台数を 12 台 に増やす案", "12 台", "却下"), ("AVIF への統一", "AVIF", "却下"),
        ("Rust への書き直し", "Rust", "検討中"), ("SLA 99.99% の要求", "99.99%", "検討中"), ("CircleCI の継続", "CircleCI", "却下"),
@@ -117,7 +118,7 @@ def one(model, effort, i, rule, truth):
 def run():
     n, rule = int(sys.argv[2]), sys.argv[3] == "rule"
     specs = [s.split(":") for s in sys.argv[4].split(",")]  # model:effort,...
-    truth = json.load(open(f"{E}/truth.json"))
+    truth = {**json.load(open(f"{E}/truth.json")), "hw": HW_KEY}  # 採点の語は gen 後に直すことがあるので、いまの一覧を使う
     os.makedirs(f"{E}/runs", exist_ok=True); os.makedirs(os.path.dirname(RESULTS), exist_ok=True)
     jobs = [(m, e, i, rule, truth) for m, e in specs for i in range(n)]
     with ThreadPoolExecutor(3) as ex, open(RESULTS, "a") as out:
