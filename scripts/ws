@@ -687,7 +687,8 @@ def cmd_know_new(args):
 _QUOTE_RE = re.compile(r'「(.+?)」(?!」)|“(.+?)”|^"(.+)"(?=\s*(?:/|$|（|\())')  # 1 行に複数あれば全部
 _QUOTE_GAP_RE = re.compile(r"…+|\.{3,}|（中略）|\[\.\.\.\]")
 _MD_LINK_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
-_QUOTE_NOISE_RE = re.compile(r"[\s*`\\|_#>\[\]]+|<[^>]+>")
+# タグは英字で始まり 1 行に収まるものだけ（`id<3` の < から次の > までを丸ごと消さない）
+_QUOTE_NOISE_RE = re.compile(r"[\s*`\\|_#>\[\]]+|</?[A-Za-z][^<>\n]*>")
 _QUOTE_CHARS = str.maketrans("’‘“”", "''\"\"")
 
 
