@@ -40,6 +40,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「続きをやって」 | task-resume スキル。起動時に hook が差し込んだ現在のタスクの `index.md` を読み、「次の一手」から再開する |
 | 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）か新しいセッション（Codex）を促す |
 | 「この URL を調べて」「この資料を読んで」 | `scripts/ws ref add <URL>` で本文丸ごとを references/ に残してから読む（WebFetch は hook が止めて ref add に誘導する） |
+| 「この論文を読みたい」（arXiv の URL） | paper-read スキル。`scripts/ws ref add <URL>` が URL の形（abs・pdf・html）を問わず、PDF ではなく arXiv の HTML 版を版で固定して保存する（HTML 版が無い・変換エラーがあるときは LaTeX ソースも）。通読は researcher に渡し、引用は doctor で原文と照合する |
 | 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-6-luna）に渡し、結論と出所だけ受け取る |
 | 「この文字起こしをまとめて」 | transcript-ingest スキル。原文を `ref add` → `scripts/ws transcript normalize` で用語集の誤変換を直す → 正規化版だけを読んで決定事項・宿題を抜き出す → 意味の取れない語は「未確定の用語」に残す。Claude Code では researcher の中（fork）で走り、本線には要点（`.summary.md`）だけが戻る |
 | 「これはナレッジにして」 | knowledge-promote スキル。`scripts/ws know new acme "移行方針"` で `knowledges/` に雛形を作り、事実と出所を書く |
@@ -98,6 +99,7 @@ agent-ws/
 ├── .agents/skills/        スキル（両ツール共通の SKILL.md）
 │   ├── task-start/        新しいタスクを切って着手する
 │   ├── task-resume/       既存タスクを index.md から再開する
+│   ├── paper-read/        論文を一字一句のまま保存し、引用を照合しながら読む
 │   ├── ref-add/           情報源を references/ に記録する
 │   ├── transcript-ingest/ 文字起こしを用語集で直してナレッジ化する
 │   ├── knowledge-promote/ タスクで得た知見を knowledges/ に昇格する
