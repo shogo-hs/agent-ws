@@ -547,11 +547,11 @@ def _ref_add_arxiv(args, dest_dir: Path, task, form: str, aid: str):
             tex = _tex_from_eprint(data) if status == 200 else None
             if tex is None:
                 die(f"LaTeX ソースが取れない（{src_url} が {status}、または PDF だけの投稿）。paper-read スキルの「PDF しか無いとき」に従う")
-            _save_ref(dest_dir, task, src_url, f"{args.title or title + note}（LaTeX ソース）", tex, "direct",
+            _save_ref(dest_dir, task, src_url, f"LaTeX ソース: {args.title or title + note}", tex, "direct",
                       args.summary if form in ("e-print", "src") else None, kind)
     else:
         print(f"数式・表を確かめるときは LaTeX ソースも保存する: scripts/ws ref add {src_url}")
-    print("論文の読み方（調査係への渡し方・引用の照合・図の見方）は paper-read スキル（.agents/skills/paper-read/SKILL.md）")
+    print("論文の読み方（詳細ノートと専門外の人向けのまとめの 2 本を作る・引用の照合）は paper-read スキル（.agents/skills/paper-read/SKILL.md）")
 
 
 def cmd_ref_add(args):

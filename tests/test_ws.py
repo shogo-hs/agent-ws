@@ -1188,7 +1188,7 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual([u for u in fetched if "/html/" in u], ["https://arxiv.org/html/1111.11111v2"])
 
         add("https://arxiv.org/e-print/1111.11111")  # LaTeX ソースだけを取っても API のタイトルが付く
-        self.assertIn("A Paper（arXiv 1111.11111v2・2026-09-01 投稿）（LaTeX ソース）", "".join(p.read_text(encoding="utf-8") for p in out_dir.glob("*.md")))
+        self.assertIn("LaTeX ソース: A Paper（arXiv 1111.11111v2・2026-09-01 投稿）", "".join(p.read_text(encoding="utf-8") for p in out_dir.glob("*.md")))
         add("https://arxiv.org/abs/2222.22222")  # HTML 版が無い → LaTeX ソースを本文にする（.tex だけをつなぐ）
         self.assertEqual(saved("https://arxiv.org/e-print/2222.22222"),
                          "%% ==== intro.tex ====\nWe set $n{=}20$.\n\n%% ==== main.tex ====\n\\input{intro}")
