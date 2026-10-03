@@ -79,6 +79,24 @@ class CodexHelpersTest(unittest.TestCase):
         self.assertEqual(RUN.tilde_str(f"cat {Path.home()}/x"), "cat ~/x")
 
 
+class FollowupTest(unittest.TestCase):
+    def test_claude_resume_flag(self):
+        cmd = RUN.build_claude_cmd("答え", "sonnet", 30, resume="sid-1")
+        self.assertEqual(cmd[-2:], ["--resume", "sid-1"])
+
+    def test_summary_labels_do_not_look_like_successes(self):
+        tmp = Path(tempfile.mkdtemp(prefix="bench-codex-test-"))
+        results = tmp / "runs.jsonl"
+        base = {"exp": "trap", "stage": None, "scale": "large", "model": "m", "cond": "B", "rundir": "x", "agent": "codex"}
+        rows = [dict(base, verdict="none", task_pick="asked"), dict(base, verdict="correct", task_pick="estimate", followup=True)]
+        results.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        with mock.patch.object(RUN, "RESULTS", tmp):
+            RUN.cmd_summary(argparse.Namespace(results=str(results), tag=None))
+        md = (tmp / "summary.md").read_text(encoding="utf-8")
+        self.assertIn("聞き返し（未着手）×1", md)
+        self.assertIn("correct（2 往復）×1", md)
+
+
 class CmdSummaryRobustnessTest(unittest.TestCase):
     """chain_id が無い（None）行で --tag を付けても落ちないこと。"""
 

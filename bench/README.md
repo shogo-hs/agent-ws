@@ -80,6 +80,16 @@ A は 10 回とも正解（`correct`）、B と C は 5 回とも「どのタス
 A を 2 組（各 5 回）走らせた A 対 A は、処理した入力 p=0.78・クレジット p=0.90 で差が出ない。1 回の処理した入力は 80k〜177k の幅で揺れる。
 毎ターン固定で送られる分（最後のターンの入力）は約 22〜24k で、Claude Code（Sonnet、約 39k）より小さい。
 
+### 聞き返されたら答える（`--followup`）
+
+trap の B・C は「どのタスクの続きか」を聞き返して止まるので、1 往復の費用は仕事をしていない分だけ安く見える。`--followup` を付けると、聞き返して止まった回に同じセッションの続きとして「ACME の Kubernetes 移行のコスト試算の続きをやって。終わったら結果を報告して。」（`FOLLOWUP`）を送り、2 往復の合計でタスクを終えるまでの値を数える（Codex は `codex exec resume`、Claude は `claude -p --resume`）。1 往復目だけの値は `r1_in_total`・`r1_cost`・`r1_task_pick` に残る。trap 専用で、rundir に `f` が付く。
+
+```
+python3 bench/run.py run --agent codex --followup --exp trap --scale large --model gpt-6.1-sol --effort medium -n 5 --jobs 3 --results bench/results/runs_codex_followup.jsonl
+```
+
+結果（2026-10-03、`results/runs_codex_followup.jsonl`・`.summary.md`）: 3 条件とも 5/5 正解（B・C は 2 往復）。処理した入力は A 123,870 に対し B 225,651・C 196,515（A が −45%・−37%、p=0.008）、クレジットは A 2.35・B 2.73・C 2.75（差は誤差の範囲、p=0.66）。Codex（ChatGPT ログイン）はキャッシュ済み入力の単価が通常の 1/20 で、B・C で増える入力はほぼキャッシュに当たるため、トークンの差がクレジットにほとんど出ない。C は 5 回とも他タスクのメモを読みに行った（2〜3 回、p=0.008）。
+
 ## 調査係のモデルと推論量（`researcher_effort.py`）
 
 Claude Code の A/B/C とは別に、Codex の調査係（`.codex/agents/researcher.toml`）に使うモデルと `model_reasoning_effort` を決めるための実測です（ADR 0020・0025）。
