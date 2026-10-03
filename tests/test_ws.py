@@ -380,7 +380,7 @@ class WsFlowTest(unittest.TestCase):
         self.ws("ref", "add", str(src), "--summary", "クリーンな要約")
         ref = next(p for p in (clean_task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
         text = ref.read_text(encoding="utf-8")
-        text = text.replace("（このタスクに関係する記述を原文のまま引用する。複数あれば箇条書き）", "「原文からの引用」")
+        text = text.replace("（このタスクに関係する記述を原文のまま引用する。複数あれば箇条書き）", "「クリーンな原文」")
         text = text.replace("（この記述をどう使ったか、使わなかったならその理由）", "このまま使った")
         ref.write_text(text, encoding="utf-8")
         idx = clean_task / "index.md"
@@ -513,7 +513,8 @@ class WsFlowTest(unittest.TestCase):
             '---\n'
             '# 旧形式\n\n'
             '## 引用した記述（原文のまま。要約しない）\n'
-            '「原文からの引用」\n\n'
+            '「本文テキスト」\n'
+            '「見出しのあと」\n\n'
             '## このタスクでの使いどころ（使わなかったなら理由）\n'
             'このまま使った\n\n'
             '## 原文（改変しない）\n'
@@ -844,6 +845,29 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("「引用した記述」節が未記入のまま", r.stdout)
         self.assertNotIn("oldest.md", r.stdout)
+
+    def test_know_new_and_doctor_flag_quotes_missing_from_original(self):
+        """「引用した記述」が原文に無ければ know new（昇格の入口）と doctor が言う。合っていれば know new は何も足さない（issue #36）。"""
+        task = self._task()
+        src = self.root / "memo.txt"
+        src.write_text("PoC の環境は\n金曜にできました。単価は 10 万円、台数は 10 台。", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "メモ")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        placeholder = "（このタスクに関係する記述を原文のまま引用する。複数あれば箇条書き）"
+        text = ref.read_text(encoding="utf-8")
+        # 空白・改行の違い、「…」での省略、引用の後ろの注記は一致とみなす
+        ref.write_text(text.replace(placeholder, "- 「PoCの環境は 金曜にできました。」\n- 「単価は…10 台」（2 行目）"), encoding="utf-8")
+        out = self.ws("know", "new", "acme", "移行方針").stdout
+        self.assertNotIn("原文に無い", out)
+        self.assertNotIn("原文に無い", self.ws("doctor", check=False).stdout)  # 他の検査（summary 空など）は見ない
+        # 原文に無い数字（8 台）と、言い換えた引用は外れる
+        ref.write_text(text.replace(placeholder, "- 「台数は 8 台」\n- 「単価は…10 台」\n> 環境は金曜に完成した"), encoding="utf-8")
+        out = self.ws("know", "new", "acme", "見積").stdout
+        self.assertIn("引用が原文に無い", out)
+        self.assertIn("台数は 8 台", out)
+        self.assertIn("環境は金曜に完成した", out)
+        self.assertNotIn("単価は", out)
+        self.assertEqual(self.ws("doctor", check=False).stdout.count("が原文に無い"), 2)
 
     # ---- 共通ナレッジ（repo 直下 knowledges/。ADR 0015） ----
 

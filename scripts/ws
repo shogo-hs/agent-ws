@@ -674,6 +674,43 @@ def cmd_know_new(args):
             if args.common else "")
     print(f"作成: {rel(dest)}\n次: 内容・出所・frontmatter の summary と type を書く（関係があれば relates_to、置き換えた決定があれば supersedes も）。{hint}"
           f"書いたら scripts/ws index {rel(kd)} で一覧の要約を更新する（自動では更新されない）")
+    # 昇格の入口で照合する。合っていれば何も出さない（AGENTS.md に規則を足さず、毎ターンの固定分を増やさない。ADR 0028）
+    task = current_task(session_id())
+    misses = [m for rf in _task_refs(task) for m in quote_misses(rf)] if task else []
+    if misses:
+        print("引用が原文に無い（昇格する前に原文を読んで直す）:\n" + "\n".join("- " + m for m in misses))
+
+
+# 「引用した記述」の照合（issue #36）。空白と強調記号を除いた部分一致。「…」「（中略）」で切った断片ごとに見る
+_QUOTE_NOISE_RE = re.compile(r"[\s*`]+")
+_QUOTE_GAP_RE = re.compile(r"…+|\.{3,}|（中略）")
+
+
+def _task_refs(task: Path) -> list[Path]:
+    refs = task / "references"
+    return sorted(p for p in refs.glob("*.md") if p.name != "index.md" and not p.name.endswith(DERIVED_SUFFIXES)) \
+        if refs.is_dir() else []
+
+
+def quote_misses(rf: Path) -> list[str]:
+    """rf の「引用した記述」のうち、原文（.orig.md・.normalized.md・旧形式は本文の原文節）に無いもの。"""
+    body = read_frontmatter(rf)[1]
+    srcs = [rf.with_name(rf.stem + s) for s in (".orig.md", ".normalized.md")]
+    hay = "".join(_QUOTE_NOISE_RE.sub("", p.read_text(encoding="utf-8")) for p in srcs if p.is_file())
+    if m := _ORIG_SECTION_RE.search(body):  # 旧形式は原文が本文の末尾まで続く（途中の見出しで切らない）
+        hay += _QUOTE_NOISE_RE.sub("", m.group(1))
+    if not hay:
+        return []  # 原文が無い（doctor の「原文が無い」が言う）
+    misses = []
+    for line in _section_raw(body, "引用した記述（原文のまま。要約しない）").splitlines():
+        q = re.sub(r"^\s*(?:(?:[-*>]|\d+[.)])\s*)+", "", line).strip()
+        if not q or (q.startswith("（") and q.endswith("）")):
+            continue  # 空行・雛形の括弧書き（未記入は doctor の別の検査が言う）
+        m = re.search(r"「(.*)」", q)  # 「…」（p.3）のような注記は外す。括弧が無ければ行全体を引用とみなす
+        frags = [_QUOTE_NOISE_RE.sub("", f) for f in _QUOTE_GAP_RE.split(m.group(1) if m else q)]
+        if any(f and f not in hay for f in frags):
+            misses.append(f"{rel(rf)}: {q[:40]}")
+    return misses
 
 
 # ---- 教訓（人からの指摘） ---------------------------------------------------
@@ -792,6 +829,7 @@ def cmd_doctor(args):
                 has_quote_section = bool(re.search(r"^##\s+引用した記述", rbody, re.M))
                 if has_quote_section and (not quote or (quote.startswith("（") and quote.endswith("）"))):
                     problems.append(f"{rel(rf)}: 「引用した記述」節が未記入のまま")
+                problems.extend(f"{m} が原文に無い" for m in quote_misses(rf))
                 if not rmeta.get("summary"):
                     problems.append(f"{rel(rf)}: frontmatter の summary が空")
             for kfile, ref_date in KNOW_REF_RE.findall(_section_raw(body, "参照したナレッジ")):
