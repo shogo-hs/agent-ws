@@ -869,6 +869,29 @@ class WsFlowTest(unittest.TestCase):
         self.assertNotIn("単価は", out)
         self.assertEqual(self.ws("doctor", check=False).stdout.count("が原文に無い"), 2)
 
+    def test_quote_check_ignores_markup_and_notes(self):
+        """実データで誤検知になった書き方（ADR 0029）は通し、言い換えと別の数字は外す。"""
+        task = self._task()
+        src = self.root / "page.md"
+        src.write_text("## Install\nIt’s licensed under the [MIT License](https://example.com/mit).\n"
+                       "| Model | Score |\n|---|---|\n| small | 69.18 |\n**Note**: runs on `aarch64` only.", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "ページ")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        text = ref.read_text(encoding="utf-8")
+        placeholder = "（このタスクに関係する記述を原文のまま引用する。複数あれば箇条書き）"
+        ok = ("- \"It's licensed under the MIT License.\"（ライセンス節）\n"
+              "- 「small | 69.18」「Note: runs on aarch64 only.」\n"
+              "- \"small 69.18\" / \"runs on aarch64\"\n"
+              "### ライセンスとスコア\n"
+              "- スコアは表のセルから読んだ（括弧の無い地の文は見ない）")
+        ref.write_text(text.replace(placeholder, ok), encoding="utf-8")
+        self.assertNotIn("原文に無い", self.ws("doctor", check=False).stdout)
+        ref.write_text(text.replace(placeholder, ok.replace("69.18」", "69.81」") + "\n- \"It is licensed under MIT.\""),
+                       encoding="utf-8")
+        out = self.ws("doctor", check=False).stdout
+        self.assertEqual(out.count("が原文に無い"), 2, out)
+        self.assertIn("69.81", out)
+
     # ---- 共通ナレッジ（repo 直下 knowledges/。ADR 0015） ----
 
     def test_common_knowledge_cli_and_injection(self):

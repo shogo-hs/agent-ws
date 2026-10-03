@@ -681,9 +681,17 @@ def cmd_know_new(args):
         print("引用が原文に無い（昇格する前に原文を読んで直す）:\n" + "\n".join("- " + m for m in misses))
 
 
-# 「引用した記述」の照合（issue #36）。空白と強調記号を除いた部分一致。「…」「（中略）」で切った断片ごとに見る
-_QUOTE_NOISE_RE = re.compile(r"[\s*`]+")
-_QUOTE_GAP_RE = re.compile(r"…+|\.{3,}|（中略）")
+# 「引用した記述」の照合（issue #36・ADR 0029）。原文と引用の両方から空白・Markdown の記号・リンクの URL を除き、
+# 引用符をそろえてから部分一致で見る。「…」「（中略）」で切った断片ごとに見る
+_QUOTE_RE = re.compile(r'「(.+?)」(?!」)|“(.+?)”|^"(.+)"(?=\s*(?:/|$|（|\())')  # 1 行に複数あれば全部
+_QUOTE_GAP_RE = re.compile(r"…+|\.{3,}|（中略）|\[\.\.\.\]")
+_MD_LINK_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_QUOTE_NOISE_RE = re.compile(r"[\s*`\\|_#>\[\]]+|<[^>]+>")
+_QUOTE_CHARS = str.maketrans("’‘“”", "''\"\"")
+
+
+def _quote_norm(s: str) -> str:
+    return _QUOTE_NOISE_RE.sub("", _MD_LINK_RE.sub(r"\1", s).replace("\\n", "").translate(_QUOTE_CHARS))
 
 
 def _task_refs(task: Path) -> list[Path]:
@@ -696,20 +704,20 @@ def quote_misses(rf: Path) -> list[str]:
     """rf の「引用した記述」のうち、原文（.orig.md・.normalized.md・旧形式は本文の原文節）に無いもの。"""
     body = read_frontmatter(rf)[1]
     srcs = [rf.with_name(rf.stem + s) for s in (".orig.md", ".normalized.md")]
-    hay = "".join(_QUOTE_NOISE_RE.sub("", p.read_text(encoding="utf-8")) for p in srcs if p.is_file())
+    hay = "".join(_quote_norm(p.read_text(encoding="utf-8")) for p in srcs if p.is_file())
     if m := _ORIG_SECTION_RE.search(body):  # 旧形式は原文が本文の末尾まで続く（途中の見出しで切らない）
-        hay += _QUOTE_NOISE_RE.sub("", m.group(1))
+        hay += _quote_norm(m.group(1))
     if not hay:
         return []  # 原文が無い（doctor の「原文が無い」が言う）
     misses = []
     for line in _section_raw(body, "引用した記述（原文のまま。要約しない）").splitlines():
         q = re.sub(r"^\s*(?:(?:[-*>]|\d+[.)])\s*)+", "", line).strip()
-        if not q or (q.startswith("（") and q.endswith("）")):
-            continue  # 空行・雛形の括弧書き（未記入は doctor の別の検査が言う）
-        m = re.search(r"「(.*)」", q)  # 「…」（p.3）のような注記は外す。括弧が無ければ行全体を引用とみなす
-        frags = [_QUOTE_NOISE_RE.sub("", f) for f in _QUOTE_GAP_RE.split(m.group(1) if m else q)]
-        if any(f and f not in hay for f in frags):
-            misses.append(f"{rel(rf)}: {q[:40]}")
+        quotes = [next(g for g in m.groups() if g) for m in _QUOTE_RE.finditer(q)]
+        if not quotes and line.lstrip().startswith(">") and q:
+            quotes = [q]  # 括弧の無い行は > の引用だけを見る（地の文の注記・見出しを引用とみなさない）
+        for part in (x for qq in quotes for x in re.split(r'"?\s+/\s+"?', qq)):  # "A" / "B" と並べた引用
+            if any(f and f not in hay for f in map(_quote_norm, _QUOTE_GAP_RE.split(part))):
+                misses.append(f"{rel(rf)}: {part[:40]}")
     return misses
 
 
