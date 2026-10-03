@@ -892,6 +892,36 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(out.count("が原文に無い"), 2, out)
         self.assertIn("69.81", out)
 
+    def test_deliverable_quotes_checked_against_cited_source(self):
+        """成果物の「出所: … 引用: 「…」」を出所が指すファイルと照合する。出所違いも外す（ADR 0030）。"""
+        task = self._task()
+        kd = self.root / "projects/acme/knowledges"
+        (kd / "001_移行方針.md").write_text("---\nsummary: \"x\"\n---\n移行は 10 台で行う。\n", encoding="utf-8")
+        (kd / "002_体制.md").write_text("---\nsummary: \"y\"\n---\n窓口は山田さん。\n", encoding="utf-8")
+        src = self.root / "memo_[draft].txt"  # glob の特殊文字を含むファイル名でも出所を解決する
+        src.write_text("単価は 10 万円。", encoding="utf-8")
+        self.ws("ref", "add", str(src), "--summary", "メモ")
+        ref = next(p for p in (task / "references").glob("*.md") if p.name != "index.md" and not p.name.endswith(".orig.md"))
+        self.assertIn("[", ref.name)
+        good = (f"# 抽出\n\n- 台数 — 出所: 001「移行」／引用: 「移行は 10 台で行う。」\n"
+                f"- 台数（再掲）。出所: 同上 引用: 「10 台」\n"
+                f"- 単価\n  引用: 「単価は 10 万円」\n  出所: {ref.name}\n"
+                f"- 聞き取り。出所: 山田さん 引用: 「来週から」\n")  # 出所を解決できないものは見ない
+        out_file = task / "extract.md"
+        out_file.write_text(good, encoding="utf-8")
+        self.assertNotIn("出所に無い", self.ws("doctor", check=False).stdout)
+        self.assertNotIn("原文に無い", self.ws("know", "new", "acme", "単価").stdout)
+        out_file.write_text(good.replace("「10 台」", "「8 台」") + "- 窓口 — 出所: 001「体制」／引用: 「窓口は山田さん。」\n"
+                            + f"- 単価（誤）\n  引用: 「単価は 12 万円」\n  出所: {ref.name}\n",
+                            encoding="utf-8")
+        out = self.ws("know", "new", "acme", "窓口").stdout
+        self.assertIn("引用が原文に無い", out)
+        self.assertIn("8 台", out)
+        self.assertIn("窓口は山田さん。（出所 001_", out)  # 002 にはあるが 001 を出所にした
+        self.assertEqual(self.ws("doctor", check=False).stdout.count("が出所に無い"), 3)
+        self.ws("task", "done")
+        self.assertNotIn("出所に無い", self.ws("doctor", check=False).stdout)  # 完了したタスクは見ない（出所のナレッジは後で変わる）
+
     # ---- 共通ナレッジ（repo 直下 knowledges/。ADR 0015） ----
 
     def test_common_knowledge_cli_and_injection(self):
