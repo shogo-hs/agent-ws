@@ -1,0 +1,358 @@
+{
+ "groups": {
+  "trap/None/large/claude-sonnet-5-5/A/False/claude": {
+   "in_total": [
+    104518,
+    102545,
+    103934,
+    104304,
+    104375
+   ],
+   "ctx_final": [
+    23603,
+    22641,
+    22953,
+    23298,
+    23485
+   ],
+   "cost_usd": [
+    0.1377354,
+    0.10049380000000001,
+    0.1030272,
+    0.10759220000000003,
+    0.109457
+   ],
+   "turns": [
+    5,
+    5,
+    5,
+    5,
+    5
+   ],
+   "reads": [
+    4,
+    2,
+    5,
+    4,
+    4
+   ],
+   "searches": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "delegates": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "advisor_calls": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "credits": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-sonnet-5-5/B/False/claude": {
+   "in_total": [
+    201110,
+    322319,
+    233624,
+    218722,
+    195321
+   ],
+   "ctx_final": [
+    29493,
+    36097,
+    31644,
+    32102,
+    28494
+   ],
+   "cost_usd": [
+    0.20851820000000001,
+    0.3075312,
+    0.2442064,
+    0.23377119999999998,
+    0.1999148
+   ],
+   "turns": [
+    9,
+    12,
+    10,
+    9,
+    9
+   ],
+   "reads": [
+    7,
+    8,
+    6,
+    7,
+    7
+   ],
+   "searches": [
+    0,
+    2,
+    2,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "advisor_calls": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "credits": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "trap/None/large/claude-sonnet-5-5/C/False/claude": {
+   "in_total": [
+    163725,
+    140305,
+    206160,
+    195369,
+    147422
+   ],
+   "ctx_final": [
+    33429,
+    24361,
+    29466,
+    32639,
+    26569
+   ],
+   "cost_usd": [
+    0.1431714,
+    0.102459,
+    0.224084,
+    0.2246646,
+    0.1106928
+   ],
+   "turns": [
+    7,
+    7,
+    9,
+    8,
+    7
+   ],
+   "reads": [
+    6,
+    6,
+    5,
+    6,
+    6
+   ],
+   "searches": [
+    0,
+    0,
+    2,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "advisor_calls": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "mixed:wrongOld8",
+    "mixed:wrongOld8",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "credits": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ },
+ "pairs": {
+  "trap/None/large/claude-sonnet-5-5/False/claude/A-B": {
+   "in_total": 0.007936507936507936,
+   "cost": 0.007936507936507936,
+   "other_task": 1.0
+  },
+  "trap/None/large/claude-sonnet-5-5/False/claude/A-C": {
+   "in_total": 0.007936507936507936,
+   "cost": 0.09523809523809523,
+   "other_task": 1.0
+  }
+ }
+}
