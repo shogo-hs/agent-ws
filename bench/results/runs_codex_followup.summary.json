@@ -1,0 +1,358 @@
+{
+ "groups": {
+  "trap/None/large/gpt-6.1-sol/A/False/codex": {
+   "in_total": [
+    147800,
+    148994,
+    123287,
+    104244,
+    123870
+   ],
+   "ctx_final": [
+    24085,
+    25261,
+    23059,
+    23683,
+    23333
+   ],
+   "cost_usd": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "turns": [
+    7,
+    7,
+    6,
+    5,
+    6
+   ],
+   "reads": [
+    2,
+    3,
+    2,
+    1,
+    2
+   ],
+   "searches": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "other_task": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    1,
+    1,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "advisor_calls": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "credits": [
+    3.29399,
+    2.34981,
+    2.11877,
+    2.88312,
+    2.19051
+   ]
+  },
+  "trap/None/large/gpt-6.1-sol/B/False/codex": {
+   "in_total": [
+    236695,
+    225651,
+    248810,
+    195854,
+    222356
+   ],
+   "ctx_final": [
+    30201,
+    32085,
+    39020,
+    27638,
+    29010
+   ],
+   "cost_usd": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "turns": [
+    10,
+    9,
+    10,
+    9,
+    10
+   ],
+   "reads": [
+    3,
+    4,
+    3,
+    4,
+    3
+   ],
+   "searches": [
+    2,
+    1,
+    4,
+    2,
+    3
+   ],
+   "other_task": [
+    1,
+    0,
+    1,
+    0,
+    0
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "advisor_calls": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "credits": [
+    2.74916,
+    2.64961,
+    3.23302,
+    2.72648,
+    2.15403
+   ]
+  },
+  "trap/None/large/gpt-6.1-sol/C/False/codex": {
+   "in_total": [
+    201428,
+    196515,
+    165524,
+    235941,
+    194805
+   ],
+   "ctx_final": [
+    32279,
+    34767,
+    30638,
+    39221,
+    30429
+   ],
+   "cost_usd": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "turns": [
+    9,
+    8,
+    8,
+    9,
+    9
+   ],
+   "reads": [
+    2,
+    4,
+    2,
+    3,
+    2
+   ],
+   "searches": [
+    3,
+    1,
+    3,
+    3,
+    3
+   ],
+   "other_task": [
+    2,
+    3,
+    2,
+    2,
+    2
+   ],
+   "inbox_reads": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "denied": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "delegates": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "advisor_calls": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "verdict": [
+    "correct",
+    "correct",
+    "correct",
+    "correct",
+    "correct"
+   ],
+   "required_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "stale_n": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "doc_location": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "credits": [
+    3.18158,
+    2.37033,
+    2.22322,
+    2.7464,
+    2.92227
+   ]
+  }
+ },
+ "pairs": {
+  "trap/None/large/gpt-6.1-sol/False/codex/A-B": {
+   "in_total": 0.007936507936507936,
+   "cost": 0.6587301587301587,
+   "other_task": 0.4444444444444444
+  },
+  "trap/None/large/gpt-6.1-sol/False/codex/A-C": {
+   "in_total": 0.007936507936507936,
+   "cost": 0.6746031746031746,
+   "other_task": 0.007936507936507936
+  }
+ }
+}

@@ -50,6 +50,10 @@ CODEX_CREDITS = {
     "gpt-5.6-luna": (5, 0.5, 30),
 }
 
+# --followup: 1 往復目で「どのタスクか」と聞き返して止まった回に、同じセッションの続きとして返す答え。
+# 条件（A/B/C）によらず同じ文面。B・C が挙げる案件名（ACME の Kubernetes 移行のコスト試算）に合わせる
+FOLLOWUP = "ACME の Kubernetes 移行のコスト試算の続きをやって。終わったら結果を報告して。"
+
 PROMPTS = {
     "trap": "続きをやって。終わったら結果を報告して。",
     "chain1": ("acme の見積タスクを始めて。依頼メールと単価表は inbox/ にある。"
@@ -405,7 +409,7 @@ def cmd_build(args):
 # ---- 1 セッション走らせて数える ----------------------------------------------------------
 
 def build_claude_cmd(prompt: str, model: str, max_turns: int, delegate: bool = False,
-                     advisor: str | None = None, effort: str | None = None) -> list[str]:
+                     advisor: str | None = None, effort: str | None = None, resume: str | None = None) -> list[str]:
     allowed = ALLOWED_TOOLS + (",Agent" if delegate else "")
     cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json",
            "--setting-sources", "project", "--strict-mcp-config", "--max-turns", str(max_turns),
@@ -414,14 +418,17 @@ def build_claude_cmd(prompt: str, model: str, max_turns: int, delegate: bool = F
         cmd += ["--advisor", advisor]  # Claude Code の Advisor（相談役モデル）を付ける。効いたかは transcript の advisor_calls で数える
     if effort:
         cmd += ["--effort", effort]  # 推論の深さ（low / medium / high）。出力（thinking）の量と正誤の交換を測る
+    if resume:
+        cmd += ["--resume", resume]  # --followup の 2 往復目。同じセッションの続きとして答えを送る
     return cmd
 
 
 def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: bool = False,
-               advisor: str | None = None, effort: str | None = None, extra_env: dict | None = None) -> tuple[dict, str, float, int]:
+               advisor: str | None = None, effort: str | None = None, extra_env: dict | None = None,
+               resume: str | None = None) -> tuple[dict, str, float, int]:
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     env.update(extra_env or {})  # --env MAX_THINKING_TOKENS=0 のように、Claude Code の環境変数で切る条件を測る
-    cmd = build_claude_cmd(prompt, model, max_turns, delegate, advisor, effort)
+    cmd = build_claude_cmd(prompt, model, max_turns, delegate, advisor, effort, resume)
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=rundir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, timeout=1800)
@@ -438,10 +445,12 @@ def run_claude(rundir: Path, prompt: str, model: str, max_turns: int, delegate: 
 AUTH_LOCK = threading.Lock()
 
 
-def run_codex(rundir: Path, prompt: str, model: str, effort: str | None, hooks: bool) -> tuple[dict, str, float, int, Path]:
+def run_codex(rundir: Path, prompt: str, model: str, effort: str | None, hooks: bool,
+              codex_home: Path | None = None, resume: str | None = None) -> tuple[dict, str, float, int, Path]:
     """codex exec を一時 CODEX_HOME で 1 回走らせる。rollout は codex_home/sessions/ の下に残る（呼び出し側が写してから rmtree する）。
+    resume を渡すと同じ codex_home のセッションの続きとして送る（--followup の 2 往復目）。
     例外でも auth.json の写しは必ず消す。Codex がトークンを更新したら ~/.codex/auth.json に書き戻す（更新前のトークンが失効する方式に備える）。"""
-    codex_home = Path(tempfile.mkdtemp(prefix="codex-home-", dir="/tmp"))
+    codex_home = codex_home or Path(tempfile.mkdtemp(prefix="codex-home-", dir="/tmp"))
     src_auth, auth_dst = Path.home() / ".codex" / "auth.json", codex_home / "auth.json"
     try:
         with AUTH_LOCK:
@@ -450,17 +459,19 @@ def run_codex(rundir: Path, prompt: str, model: str, effort: str | None, hooks: 
         auth_dst.chmod(0o600)
         (codex_home / "config.toml").write_text(f'[projects."{rundir}"]\ntrust_level = "trusted"\n', encoding="utf-8")
         out_path = rundir.parent / (rundir.name + ".last.txt")
-        cmd = ["codex", "exec", "--json", "-m", model]
+        # exec resume には -s と -C が無いので、sandbox は -c で、作業場所は cwd で渡す
+        cmd = ["codex", "exec"] + (["resume"] if resume else []) + ["--json", "-m", model]
         if effort:
             cmd += ["-c", f'model_reasoning_effort="{effort}"']
-        cmd += ["-s", "workspace-write", "--skip-git-repo-check", "-C", str(rundir), "-o", str(out_path)]
+        cmd += (["-c", 'sandbox_mode="workspace-write"'] if resume else ["-s", "workspace-write", "-C", str(rundir)])
+        cmd += ["--skip-git-repo-check", "-o", str(out_path)]
         if hooks:  # 条件 A（.codex/hooks.json を持つ）だけ。B/C は hooks 自体が無い
             cmd += ["--dangerously-bypass-hook-trust"]
-        cmd.append(prompt)
+        cmd += ([resume] if resume else []) + [prompt]
         env = {**os.environ, "CODEX_HOME": str(codex_home)}
         t0 = time.time()
         # codex は node から本体を起こすので、タイムアウトではプロセスグループごと止める（子が残って rundir を書き続けないように）
-        proc = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        proc = subprocess.Popen(cmd, cwd=rundir, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, start_new_session=True)
         try:
             stdout, stderr = proc.communicate(timeout=900)  # Codex に最大ターン数の指定が無いので外側で止める
@@ -796,28 +807,52 @@ def doc_location(changed: list[str], cond: str) -> str:
 def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, i: int,
                 rundir: Path, prompt: str, baseline: set[str], max_turns: int, chain_id: str | None,
                 delegate: bool = False, advisor: str | None = None, effort: str | None = None,
-                extra_env: dict | None = None, agent: str = "claude") -> dict:
+                extra_env: dict | None = None, agent: str = "claude", followup: str | None = None) -> dict:
     before = snapshot(rundir)
+    is_other = other_task_pred(cond, exp, stage, baseline)
+    r1 = None  # --followup で 2 往復目を送ったときの、1 往復目だけの値
     if agent == "codex":
         res, stderr, elapsed, rc, codex_home = run_codex(rundir, prompt, model, effort, hooks=(cond == "A"))
     else:
         res, stderr, elapsed, rc = run_claude(rundir, prompt, model, max_turns, delegate, advisor, effort, extra_env)
+    final = (res.get("final_text") if agent == "codex" else res.get("result")) or ""
+    sid = (res.get("thread_id") if agent == "codex" else res.get("session_id")) or ""
+    if followup and sid:
+        mid = snapshot(rundir)
+        changed1 = sorted(p for p, h in mid.items() if before.get(p) != h)
+        pick1 = pick_task(verdict_estimate(final + "\n" + changed_text_of(rundir, changed1)), final, changed1)
+        if pick1 == "asked":
+            if agent == "codex":
+                found1 = find_rollout(codex_home, sid)
+                m1 = analyze_codex(found1, rundir, is_other) if found1 else {}
+                cost1 = codex_credits(m1.get("model") or model, m1.get("in_total", 0), m1.get("cached_in", 0), m1.get("out_total", 0))
+                res2, stderr2, elapsed2, rc2, _ = run_codex(rundir, followup, model, effort, hooks=(cond == "A"), codex_home=codex_home, resume=sid)
+                final2 = res2.get("final_text") or ""
+            else:
+                t1 = find_transcript(sid)
+                m1 = analyze(t1, rundir, is_other) if t1 else {}
+                cost1 = res.get("total_cost_usd")
+                res2, stderr2, elapsed2, rc2 = run_claude(rundir, followup, model, max_turns, delegate, advisor, effort, extra_env, resume=sid)
+                final2 = res2.get("result") or ""
+            r1 = dict(r1_in_total=m1.get("in_total"), r1_cost=cost1, r1_turns=m1.get("turns"), r1_task_pick=pick1, r1_final_text=final[:2000])
+            final, stderr, elapsed, rc = final2, stderr + stderr2, elapsed + elapsed2, rc or rc2
     after = snapshot(rundir)
     changed = sorted(p for p, h in after.items() if before.get(p) != h)
     changed_text = changed_text_of(rundir, changed)
-    is_other = other_task_pred(cond, exp, stage, baseline)
 
     if agent == "codex":
-        final = res.get("final_text") or ""
-        sid = res.get("thread_id") or ""
         tpath, sub_usage = None, []
         try:
-            found = find_rollout(codex_home, sid) if sid else None
-            if found:  # 一時 CODEX_HOME は消すので、rollout だけ rundir の横（リポジトリの外）に残して rescore できるようにする
+            mains = sorted(codex_home.glob(f"sessions/**/rollout-*-{sid}.jsonl")) if sid else []
+            if not mains and sid:
+                found = find_rollout(codex_home, sid)
+                mains = [found] if found else []
+            if mains:  # 一時 CODEX_HOME は消すので、rollout だけ rundir の横（リポジトリの外）に残して rescore できるようにする
                 stem = rundir.name + (f".s{stage}" if stage else "")
                 tpath = rundir.parent / f"{stem}.rollout.jsonl"
-                shutil.copy(found, tpath)
-                for i_sub, other in enumerate(p for p in codex_home.glob("sessions/**/rollout-*.jsonl") if p != found):
+                # resume が別ファイルを作っても同じファイルに足しても、response_id の重複除去で二重に数えない
+                tpath.write_text("".join(m.read_text(encoding="utf-8") for m in mains), encoding="utf-8")
+                for i_sub, other in enumerate(p for p in codex_home.glob("sessions/**/rollout-*.jsonl") if p not in mains):
                     dst = rundir.parent / f"{stem}.sub{i_sub}.rollout.jsonl"  # spawn_agent の子スレッド（researcher）
                     shutil.copy(other, dst)
                     sub_usage.append(codex_usage(dst))
@@ -831,15 +866,26 @@ def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, 
         transcript, cost_usd, num_turns, model_usage, permission_denials = (str(tpath) if tpath else None), None, None, {}, 0
         is_error = rc != 0
     else:
-        final = res.get("result") or ""
-        sid = res.get("session_id", "")
         tpath = find_transcript(sid) if sid else None
+        if r1 is not None:
+            sid2 = res2.get("session_id") or sid
+            t2 = find_transcript(sid2)
+            if t2 and tpath and t2 != tpath:  # --resume が別の transcript を作ったら 2 本を 1 本にまとめる（message.id で重複除去）
+                merged = rundir.parent / f"{rundir.name}.transcript.jsonl"
+                merged.write_text(tpath.read_text(encoding="utf-8") + t2.read_text(encoding="utf-8"), encoding="utf-8")
+                tpath = merged
         met = analyze(tpath, rundir, is_other) if tpath else {}
         transcript = tilde(tpath) if tpath else None
-        cost_usd, num_turns = res.get("total_cost_usd"), res.get("num_turns")
+        num_turns = res.get("num_turns")
+        cost_usd = res.get("total_cost_usd")
         model_usage = {k: v.get("costUSD") for k, v in (res.get("modelUsage") or {}).items()}
         permission_denials = len(res.get("permission_denials") or [])
         is_error = res.get("is_error")
+        if r1 is not None:
+            cost_usd = (cost_usd or 0) + (res2.get("total_cost_usd") or 0)
+            num_turns = (num_turns or 0) + (res2.get("num_turns") or 0)
+            permission_denials += len(res2.get("permission_denials") or [])
+            is_error = is_error or res2.get("is_error")
 
     text_all = final + "\n" + changed_text
     rec = dict(ts=datetime.now().isoformat(timespec="seconds"), exp=exp, stage=stage, chain_id=chain_id,
@@ -852,6 +898,8 @@ def run_session(exp: str, stage: int | None, scale: str, cond: str, model: str, 
                final_text=final[:6000], changed_text=changed_text[:30000],
                baseline=sorted(baseline) if exp == "chain" else None)
     rec.update({k: v for k, v in met.items()})
+    rec["followup"] = r1 is not None  # 2 往復目を送ったか。送ったら in_total・費用・正誤は 2 往復の合計
+    rec.update(r1 or {})
     rec["model"] = rec.get("model") or model  # 変名できなかったとき（transcript 無し等）は呼び出し時の指定を残す
     rec["cached_in"] = rec.get("cached_in", 0)
     rec["reasoning_out"] = rec.get("reasoning_out", 0)
@@ -889,9 +937,9 @@ def strip_advisor_env(rundir: Path):
 
 def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, results: Path, max_turns: int,
            delegate: bool = False, advisor: str | None = None, effort: str | None = None,
-           extra_env: dict | None = None, agent: str = "claude") -> list[dict]:
+           extra_env: dict | None = None, agent: str = "claude", followup: bool = False) -> list[dict]:
     # 委譲ありは rundir/cid に d を混ぜて委譲なしと衝突させない。codex は k を混ぜて claude の rundir と衝突させない
-    suffix = ("k" if agent == "codex" else "") + ("d" if delegate else "") + ("v" if advisor else "") + (f"e{effort[0]}" if effort else "") + ("x" if extra_env else "")
+    suffix = ("k" if agent == "codex" else "") + ("f" if followup else "") + ("d" if delegate else "") + ("v" if advisor else "") + (f"e{effort[0]}" if effort else "") + ("x" if extra_env else "")
     rundir = RUNS_DIR / tag / f"{exp}_{scale}_{model}_{cond}{i}{suffix}"
     state = "fresh" if exp == "chain" else "doing"
     build(cond, scale, state, rundir)
@@ -908,7 +956,8 @@ def run_one(exp: str, scale: str, cond: str, model: str, i: int, tag: str, resul
         recs = [r1, r2]
     else:
         r = run_session(exp, None, scale, cond, model, i, rundir, PROMPTS[exp], baseline,
-                        1 if exp == "base" else max_turns, None, delegate, advisor, effort, extra_env, agent)
+                        1 if exp == "base" else max_turns, None, delegate, advisor, effort, extra_env, agent,
+                        FOLLOWUP if followup else None)
         append_result(r, results)
         recs = [r]
     for r in recs:
@@ -925,6 +974,8 @@ def cmd_run(args):
             sys.exit("agent=codex: exp=base は対象外（1 ターン固定の比較は claude 専用）")
         if args.delegate or args.advisor or args.env:
             sys.exit("agent=codex: --delegate/--advisor/--env は claude 専用")
+    if args.followup and args.exp != "trap":
+        sys.exit("--followup は trap だけ（聞き返して止まった回に答えを返す）")
     tag = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
     results = Path(args.results).resolve() if args.results else RESULTS / "runs.jsonl"
     conds = args.conds.split(",")
@@ -933,12 +984,12 @@ def cmd_run(args):
     print(f"tag={tag} agent={args.agent} exp={args.exp} scale={args.scale} model={args.model} jobs={len(jobs)} -> {results}", flush=True)
     if args.jobs > 1:
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env, args.agent) for c, i in jobs]
+            futs = [ex.submit(run_one, args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env, args.agent, args.followup) for c, i in jobs]
             for f in futs:
                 f.result()
     else:
         for c, i in jobs:
-            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env, args.agent)
+            run_one(args.exp, args.scale, c, args.model, i, tag, results, args.max_turns, args.delegate, args.advisor, args.effort, extra_env, args.agent, args.followup)
 
 
 def cmd_rescore(args):
@@ -1057,7 +1108,9 @@ def cmd_summary(args):
             for r in g:
                 k = r.get("verdict", "?")
                 if k == "none":
-                    k = "none/" + r.get("task_pick", "?")
+                    k = {"asked": "聞き返し（未着手）", "other": "答え無し", "estimate": "着手・答え無し"}.get(r.get("task_pick"), "none/?")
+                if r.get("followup"):
+                    k += "（2 往復）"
                 vc[k] = vc.get(k, 0) + 1
             verdict = " ".join(f"{k}×{v}" for k, v in sorted(vc.items()))
         label = f"{exp}{'/S' + str(stage) if stage else ''}"
@@ -1223,6 +1276,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default="sonnet")
     p.add_argument("--agent", choices=["claude", "codex"], default="claude",
                    help="codex は codex exec を使う（--delegate/--advisor/--env と base は claude 専用）")
+    p.add_argument("--followup", action="store_true",
+                   help="trap で聞き返して止まった回に、同じセッションの続きとして答え（FOLLOWUP）を送り、2 往復の合計で数える。rundir に f が付く")
     p.add_argument("--conds", default="A,B,C")
     p.add_argument("-n", type=int, default=5)
     p.add_argument("--jobs", type=int, default=1)
