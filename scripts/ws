@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import glob
 import hashlib
 import json
 import os
@@ -676,7 +677,7 @@ def cmd_know_new(args):
           f"書いたら scripts/ws index {rel(kd)} で一覧の要約を更新する（自動では更新されない）")
     # 昇格の入口で照合する。合っていれば何も出さない（AGENTS.md に規則を足さず、毎ターンの固定分を増やさない。ADR 0028）
     task = current_task(session_id())
-    misses = [m for rf in _task_refs(task) for m in quote_misses(rf)] if task else []
+    misses = [m for rf in _task_refs(task) for m in quote_misses(rf)] + deliverable_misses(task) if task else []
     if misses:
         print("引用が原文に無い（昇格する前に原文を読んで直す）:\n" + "\n".join("- " + m for m in misses))
 
@@ -718,6 +719,55 @@ def quote_misses(rf: Path) -> list[str]:
         for part in (x for qq in quotes for x in re.split(r'"?\s+/\s+"?', qq)):  # "A" / "B" と並べた引用
             if any(f and f not in hay for f in map(_quote_norm, _QUOTE_GAP_RE.split(part))):
                 misses.append(f"{rel(rf)}: {part[:40]}")
+    return misses
+
+
+# 成果物（references/ と index.md 以外の .md）の「出所: … 引用: 「…」」を、出所が指すファイルと照合する（ADR 0030）。
+# 出所は 同上・URL（ref add した source）・3 桁のナレッジ番号・パスか references のファイル名の先頭 8 字以上、のどれか
+_SRC_RE = re.compile(r"出所[:：]\s*`?([^「（／|`\n]*?)`?\s*(?=引用|「|（|／|\||—|$)", re.M)
+_QUOTE_LABEL_RE = re.compile(r"引用[:：]\s*([^\n]*)")
+
+
+def _source_files(spec: str, task: Path) -> list[Path]:
+    s, proj = spec.strip().rstrip("。、,."), task.parent.parent
+    if re.match(r"https?://", s):
+        return [rf for rf in _task_refs(task) if read_frontmatter(rf)[0].get("source", "").rstrip("/") == s.rstrip("/")]
+    if m := re.match(r"(\d{3})(?!\d)", s):
+        return sorted((proj / "knowledges").glob(m.group(1) + "_*.md"))[:1]
+    stem = re.sub(r"(\.(orig|normalized|summary))?\.md$", "", s.split("/")[-1])
+    if len(stem) < 8:
+        return []
+    hits = [p for d in (task / "references", proj / "knowledges") for p in d.glob(glob.escape(stem) + "*.md")]
+    return hits + [p for p in (task / s, proj / s, ROOT / s) if p.is_file()]
+
+
+def _source_text(files: list[Path]) -> str:
+    """出所のファイルと、reference ならその原文（.orig.md・.normalized.md）を正規化してつなぐ。"""
+    stems = {re.sub(r"(\.(orig|normalized|summary))?\.md$", "", f.name): f.parent for f in files}
+    return "".join(_quote_norm(p.read_text(encoding="utf-8")) for s, d in stems.items()
+                   for p in (d / f"{s}.md", d / f"{s}.orig.md", d / f"{s}.normalized.md") if p.is_file())
+
+
+def deliverable_misses(task: Path) -> list[str]:
+    misses = []
+    for f in sorted(task.rglob("*.md")):
+        if "references" in f.relative_to(task).parts or f.name == "index.md":
+            continue
+        prev: list[Path] = []
+        # 1 項目（箇条書き・番号・見出し・表の行で区切り、続きの行を含める）の中で出所と引用を対にする
+        for block in re.split(r"\n(?=[ \t]*\n|(?:[-*]|\d+[.)])\s|#|\|)", f.read_text(encoding="utf-8")):
+            quotes = [next(g for g in m.groups() if g) for lab in _QUOTE_LABEL_RE.findall(block)
+                      for m in _QUOTE_RE.finditer(lab)]
+            specs = _SRC_RE.findall(block)
+            if not quotes or not specs:
+                continue  # 出所の無い引用は照合しない
+            files = [p for s in specs for p in (prev if s.strip().startswith("同上") else _source_files(s, task))]
+            if not files:
+                continue  # 出所を解決できない（ファイル名の書き間違い・人からの聞き取りなど）
+            prev, hay = files, _source_text(files)
+            for q in quotes:
+                if any(x and x not in hay for x in map(_quote_norm, _QUOTE_GAP_RE.split(q))):
+                    misses.append(f"{rel(f)}: {q[:40]}（出所 {files[0].name[:30]}）")
     return misses
 
 
@@ -815,6 +865,7 @@ def cmd_doctor(args):
                 problems.append(f"{rel(t)}: references/ が空（情報源を記録していない）")
             if meta.get("status") != "doing":
                 continue
+            problems.extend(f"{m} が出所に無い" for m in deliverable_misses(t))
             age = _days_since(meta.get("updated", ""))
             if age is not None and age > TASK_STALE_DAYS:
                 problems.append(f"{rel(t)}: doing のまま updated が {age} 日前（{TASK_STALE_DAYS} 日超）。"

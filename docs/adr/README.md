@@ -35,6 +35,7 @@
 | [0027](0027-state-each-fixed-instruction-once.md) | 毎ターン送る固定の指示は 1 か所にだけ書き、オントロジーの使い方は定義があるときだけ注入する | 採用 | 固定分は Claude −5.1%・Codex −4.5%。trap・newtask × Claude・Codex の 80 回で正誤は落ちず、費用の差が有意だったのは Claude の newtask（−6%）だけ。OpenAI の −41〜66% は、変えられるのが固定分の約 3 割なので再現しない |
 | [0028](0028-check-quotes-against-original-on-promote.md) | 「引用した記述」が原文にあるかを know new と doctor が機械で照合する（AGENTS.md は変えない） | 採用 | 調査係の引用 12 か所が原文とずれたまま通った（issue #36）。固定分と追加のターンは 0、合っていれば出力も増えない。効果は未測定 |
 | [0029](0029-quote-check-precision-on-real-data.md) | 引用の照合は原文と引用の両方から Markdown の記号を除き、括弧の中だけを見る | 採用 | 実データ 1,084 行で「原文に無い」が 227 → 45（本物 約 37・誤検知 8）。0028 のままだと適合率 約 16% |
+| [0030](0030-check-deliverable-quotes-against-cited-source.md) | タスクの成果物の「出所: … 引用: 「…」」を、出所が指すファイルと照合する | 採用 | issue #36 の事故 12 か所のうち 6 か所を誤検知 0 で拾う（0028・0029 は 0）。実際の成果物の引用 410 件で誤検知 0 |
 
 ## 書き方
 
