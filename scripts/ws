@@ -13,14 +13,19 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import glob
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
 import sys
+import tarfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -378,7 +383,8 @@ def cmd_task_done(args):
 
 class _TextExtractor(HTMLParser):
     """HTML から本文テキストだけを抜く。script/style/nav は捨てる。"""
-    SKIP = {"script", "style", "noscript", "svg", "head", "nav", "footer"}
+    # annotation は MathML の中の LaTeX の原文。画面には出ないので、残すと「n=20n{=}20」のように数式が二重になる
+    SKIP = {"script", "style", "noscript", "svg", "head", "nav", "footer", "annotation", "annotation-xml"}
     BLOCK = {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr",
              "section", "article", "pre", "blockquote", "table"}
 
@@ -410,7 +416,8 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data)
 
     def text(self) -> str:
-        t = re.sub(r"[ \t　]+", " ", "".join(self.parts))
+        # U+2061〜2064 は MathML の目に見えない演算子（関数適用など）。残ると「Φ(」が「Φ\u2061(」になり引用が一致しない
+        t = re.sub(r"[ \t　]+", " ", re.sub("[\u2061-\u2064]", "", "".join(self.parts)))
         return re.sub(r"\n\s*\n+", "\n\n", t).strip()
 
 
@@ -427,7 +434,12 @@ def _fetch_direct(url: str) -> tuple[str, str]:
         with urllib.request.urlopen(req, timeout=30) as r:
             ctype = r.headers.get_content_type()
             charset = r.headers.get_content_charset() or "utf-8"
+            if ctype == "application/pdf":
+                die(f"PDF は ref add で読めない（バイナリのまま保存される）: {url}。"
+                    "arXiv なら abs か html の URL を渡す。それ以外は paper-read スキルの「PDF しか無いとき」に従う")
             body = r.read().decode(charset, errors="replace")
+    except SystemExit:
+        raise
     except Exception as e:  # noqa: BLE001 — 取得失敗は理由を見せて止まるだけでよい
         die(f"取得に失敗: {url} ({e})")
     if "html" in ctype:
@@ -459,6 +471,89 @@ def fetch(url: str) -> tuple[str, str, str]:
     return title, body, "direct"
 
 
+# arxiv.org/abs/2609.01038・/pdf/2609.01038v2・/html/…・/e-print/… と旧形式の hep-th/9901001 から ID（版を含む）を取る
+_ARXIV_RE = re.compile(r"^https?://(?:www\.|export\.)?arxiv\.org/(abs|pdf|html|e-print|src)/([^?#]+?)(?:\.pdf)?/?(?:[?#].*)?$")
+
+
+def _get(url: str) -> tuple[int, bytes]:
+    """直接取得して (HTTP の状態, 本文) を返す。404 などは状態で返し、通信の失敗だけ止める。"""
+    req = urllib.request.Request(url, headers={"User-Agent": "agent-ws/0.1 (+scripts/ws ref add)"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, b""
+    except Exception as e:  # noqa: BLE001 — 取得失敗は理由を見せて止まるだけでよい
+        die(f"取得に失敗: {url} ({e})")
+
+
+def _tex_from_eprint(data: bytes) -> str | None:
+    """arXiv のソース（tar.gz か、.tex 1 本の gzip）から .tex を全部つなげて返す。PDF しか無い投稿なら None。"""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            parts = [f"%% ==== {m.name} ====\n" + tf.extractfile(m).read().decode("utf-8", errors="replace")
+                     for m in sorted(tf.getmembers(), key=lambda m: m.name) if m.isfile() and m.name.endswith(".tex")]
+            return "\n\n".join(parts) or None
+    except tarfile.TarError:
+        pass
+    raw = gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
+    return None if raw.startswith(b"%PDF") else raw.decode("utf-8", errors="replace")
+
+
+def _arxiv_meta(aid: str) -> tuple[str, str, str]:
+    """arXiv API から (版つきの ID, タイトル, 投稿日) を取る。取れなければ (aid, "", "")。
+    版で固定すると、後で v2 が出ても引用の出所（保存した原文と URL）が食い違わない。"""
+    atom = "{http://www.w3.org/2005/Atom}"
+    try:
+        e = ET.fromstring(_get(f"https://export.arxiv.org/api/query?id_list={aid}")[1]).find(atom + "entry")
+        canon = e.findtext(atom + "id").rsplit("/abs/", 1)[1]
+        title = " ".join(e.findtext(atom + "title", "").split())
+        published = e.findtext(atom + "published")[:10]
+    except (ET.ParseError, AttributeError, IndexError, TypeError):
+        return aid, "", ""
+    return (aid if re.search(r"v\d+$", aid) else canon), title, published
+
+
+def _ref_add_arxiv(args, dest_dir: Path, task, form: str, aid: str):
+    """arXiv は PDF ではなく、arXiv が LaTeX から作った HTML 版を本文として保存する（PDF からの抽出は段組・合字・数式が崩れる）。
+    HTML 版が無いとき・変換エラー（ltx_ERROR）があるときは LaTeX ソースも保存する。
+    r.jina.ai は arXiv の HTML 版に図の説明文しか返さない（2026-10-03 に 331 バイト）ので直接取る。"""
+    aid, title, published = _arxiv_meta(aid)
+    html_url, src_url = f"https://arxiv.org/html/{aid}", f"https://arxiv.org/e-print/{aid}"
+    want_src = form in ("e-print", "src")
+    kind = args.kind or "web"
+    note = f"（arXiv {aid}" + (f"・{published} 投稿）" if published else "）")
+    if not want_src:
+        if not args.force and (dup := _existing_ref(dest_dir, html_url)):
+            print(f"既にある: {_shown(dup)}（同じ論文の HTML 版。撮り直すなら --force）")
+            return
+        status, data = _get(html_url)
+        if status == 200:
+            p = _TextExtractor()
+            p.feed(html := data.decode("utf-8", errors="replace"))
+            title = title or p.title.strip()
+            _save_ref(dest_dir, task, html_url, args.title or title + note, p.text(), "direct", args.summary, kind)
+            want_src = "ltx_ERROR" in html
+            if want_src:
+                print("HTML 版に変換エラー（ltx_ERROR）がある。崩れた箇所を確かめるため LaTeX ソースも保存する")
+        else:
+            print(f"HTML 版が無い（{html_url} が {status}）。LaTeX ソースを本文にする")
+            want_src = True
+    if want_src:
+        if not args.force and (dup := _existing_ref(dest_dir, src_url)):
+            print(f"既にある: {_shown(dup)}（同じ論文の LaTeX ソース。撮り直すなら --force）")
+        else:
+            status, data = _get(src_url)
+            tex = _tex_from_eprint(data) if status == 200 else None
+            if tex is None:
+                die(f"LaTeX ソースが取れない（{src_url} が {status}、または PDF だけの投稿）。paper-read スキルの「PDF しか無いとき」に従う")
+            _save_ref(dest_dir, task, src_url, f"{args.title or title + note}（LaTeX ソース）", tex, "direct",
+                      args.summary if form in ("e-print", "src") else None, kind)
+    else:
+        print(f"数式・表を確かめるときは LaTeX ソースも保存する: scripts/ws ref add {src_url}")
+    print("論文の読み方（調査係への渡し方・引用の照合・図の見方）は paper-read スキル（.agents/skills/paper-read/SKILL.md）")
+
+
 def cmd_ref_add(args):
     if args.dir:
         dest_dir = Path(args.dir)
@@ -471,6 +566,8 @@ def cmd_ref_add(args):
         dest_dir = task / "references"
     src = args.source
     via = "local"
+    if m := _ARXIV_RE.match(src):
+        return _ref_add_arxiv(args, dest_dir, task, m.group(1), m.group(2))
     if re.match(r"https?://", src):
         if not args.force and (dup := _existing_ref(dest_dir, src)):
             print(f"既にある: {_shown(dup)}（source が同じ。読むならこのファイル、追記は「引用した記述」へ。撮り直すなら --force）")
@@ -487,7 +584,10 @@ def cmd_ref_add(args):
         if not args.force and (dup := _existing_ref(dest_dir, src)):
             print(f"既にある: {_shown(dup)}（source が同じ。読むならこのファイル、追記は「引用した記述」へ。撮り直すなら --force）")
             return
-    title = args.title or title or src
+    _save_ref(dest_dir, task, src, args.title or title or src, body, via, args.summary, kind)
+
+
+def _save_ref(dest_dir: Path, task, src: str, title: str, body: str, via: str, summary, kind: str):
     dest = dest_dir / f"{now():%Y%m%d_%H%M}_{slugify(title)[:40]}.md"
     for suffix in DERIVED_SUFFIXES:  # 情報源が *.orig.md 等（スナップショットの原文など）でも要点側を派生扱いの名前にしない
         if dest.name.endswith(suffix):
@@ -501,7 +601,7 @@ def cmd_ref_add(args):
     write(dest, render(TEMPLATES / "reference.md", title=title, kind=kind, source=src, via=via,
                        retrieved_at=now().isoformat(timespec="seconds"),
                        retrieved_by=os.environ.get("WS_AGENT", "unknown"),
-                       summary=args.summary or "", orig_name=dest_orig.name))
+                       summary=summary or "", orig_name=dest_orig.name))
     if task:
         update_index(task / "references")
         update_index(task)
@@ -509,7 +609,7 @@ def cmd_ref_add(args):
     shown_orig = rel(dest_orig) if dest_orig.resolve().is_relative_to(ROOT) else str(dest_orig.resolve())
     print(f"保存: {shown}")
     print(f"原文: {shown_orig}")
-    if not args.summary:
+    if not summary:
         print("summary が空。読んだら summary・「引用した記述」・「このタスクでの使いどころ」を埋める")
 
 

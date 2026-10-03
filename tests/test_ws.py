@@ -1117,6 +1117,87 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(out["command"], 'echo "a/b"\nls')
         self.assertEqual(mod.TASK_RE.findall(json.dumps(out)), [("acme", "20200101_other")])
 
+    def test_ref_add_arxiv_saves_html_and_falls_back_to_latex_source(self):
+        """arXiv は URL の形（abs・pdf・html）に関係なく HTML 版を本文にする。HTML 版が無い・変換エラーがあるときは LaTeX ソースも保存する。"""
+        import argparse
+        import contextlib
+        import importlib.machinery
+        import importlib.util
+        import io
+        import tarfile
+        os.environ["WS_ROOT"] = str(self.root)
+        try:
+            loader = importlib.machinery.SourceFileLoader("ws_mod", str(WS))
+            mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("ws_mod", loader))
+            loader.exec_module(mod)
+        finally:
+            os.environ.pop("WS_ROOT")
+        m = mod._ARXIV_RE.match
+        self.assertEqual(m("https://arxiv.org/pdf/2609.01038v2.pdf").groups(), ("pdf", "2609.01038v2"))
+        self.assertEqual(m("https://arxiv.org/abs/2609.01038#x").groups(), ("abs", "2609.01038"))
+        self.assertEqual(m("http://export.arxiv.org/abs/hep-th/9901001").groups(), ("abs", "hep-th/9901001"))
+        self.assertIsNone(m("https://example.org/abs/2609.01038"))
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            for name, text in (("main.tex", "\\input{intro}"), ("intro.tex", "We set $n{=}20$."), ("fig.png", "x")):
+                info = tarfile.TarInfo(name)
+                info.size = len(text.encode())
+                tf.addfile(info, io.BytesIO(text.encode()))
+        page = ('<html><head><title>A Paper</title></head><body><p>We use <math alttext="n{=}20"><semantics>'
+                '<mi>n</mi><mo>\u2062=</mo><mn>20</mn><annotation encoding="application/x-tex">n{=}20</annotation>'
+                '</semantics></math> tests.</p>{err}</body></html>')
+        responses = {
+            "https://arxiv.org/html/1111.11111": (200, page.replace("{err}", "").encode()),
+            "https://arxiv.org/html/2222.22222": (404, b""),
+            "https://arxiv.org/e-print/2222.22222": (200, buf.getvalue()),
+            "https://arxiv.org/e-print/1111.11111v2": (200, buf.getvalue()),
+            "https://arxiv.org/html/3333.33333": (200, page.replace("{err}", '<span class="ltx_ERROR">\\foo</span>').encode()),
+            "https://arxiv.org/e-print/3333.33333": (200, buf.getvalue()),
+            "https://arxiv.org/html/4444.44444": (404, b""),
+            "https://arxiv.org/e-print/4444.44444": (200, b"%PDF-1.5 ..."),
+        }
+        fetched = []
+        responses["https://export.arxiv.org/api/query?id_list=1111.11111"] = (200, (
+            '<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/1111.11111v2</id>'
+            '<title>A\n  Paper</title><published>2026-09-01T10:35:49Z</published></entry></feed>').encode())
+        responses["https://export.arxiv.org/api/query?id_list=1111.11111v2"] = responses["https://export.arxiv.org/api/query?id_list=1111.11111"]
+        responses["https://arxiv.org/html/1111.11111v2"] = responses.pop("https://arxiv.org/html/1111.11111")
+        mod._get = lambda url: (fetched.append(url), responses.get(url, (404, b"")))[1]  # API が答えない論文は版を固定しない
+        out_dir = self.root / "refs"
+
+        def add(url):
+            args = argparse.Namespace(dir=str(out_dir), source=url, summary=None, title=None, kind=None, force=False)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                mod.cmd_ref_add(args)
+            return out.getvalue()
+
+        def saved(source):
+            for p in out_dir.glob("*.md"):
+                if not p.name.endswith(".orig.md") and f'source: "{source}"' in p.read_text(encoding="utf-8"):
+                    return unwrap(p.with_name(p.stem + ".orig.md").read_text(encoding="utf-8"))
+            return None
+
+        out = add("https://arxiv.org/pdf/1111.11111")  # PDF の URL でも HTML 版を取る
+        self.assertEqual(saved("https://arxiv.org/html/1111.11111v2"), "We use n=20 tests.")  # API の版で固定する  # 数式は LaTeX の原文（annotation）と二重にならない
+        self.assertIn("A Paper（arXiv 1111.11111v2・2026-09-01 投稿）", "".join(p.read_text(encoding="utf-8") for p in out_dir.glob("*.md")))
+        self.assertIn("scripts/ws ref add https://arxiv.org/e-print/1111.11111v2", out)  # LaTeX ソースは案内だけ
+        self.assertIn("paper-read", out)
+        self.assertIn("既にある", add("https://arxiv.org/abs/1111.11111v2"))  # 同じ論文を別の形の URL で渡しても 2 回保存しない
+        self.assertEqual([u for u in fetched if "/html/" in u], ["https://arxiv.org/html/1111.11111v2"])
+
+        add("https://arxiv.org/e-print/1111.11111")  # LaTeX ソースだけを取っても API のタイトルが付く
+        self.assertIn("A Paper（arXiv 1111.11111v2・2026-09-01 投稿）（LaTeX ソース）", "".join(p.read_text(encoding="utf-8") for p in out_dir.glob("*.md")))
+        add("https://arxiv.org/abs/2222.22222")  # HTML 版が無い → LaTeX ソースを本文にする（.tex だけをつなぐ）
+        self.assertEqual(saved("https://arxiv.org/e-print/2222.22222"),
+                         "%% ==== intro.tex ====\nWe set $n{=}20$.\n\n%% ==== main.tex ====\n\\input{intro}")
+        add("https://arxiv.org/abs/3333.33333")  # 変換エラーがある → HTML 版と LaTeX ソースの両方
+        self.assertIsNotNone(saved("https://arxiv.org/html/3333.33333"))
+        self.assertIsNotNone(saved("https://arxiv.org/e-print/3333.33333"))
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            add("https://arxiv.org/abs/4444.44444")  # PDF だけの投稿は止めて、読み方の案内に回す
+
     def test_calc_binds_names_and_hides_float_noise(self):
         """人に渡す数字は暗算させない。1 回の呼び出しで小計・税・合計が出て、2 進小数の誤差は出力に出ない。"""
         r = self.ws("calc", "小計=3*12000", "税=int(小計*0.1)", "小計+税", "1.1*12000", "0.1+0.2")
