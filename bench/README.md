@@ -90,6 +90,8 @@ python3 bench/run.py run --agent codex --followup --exp trap --scale large --mod
 
 結果（2026-10-03、`results/runs_codex_followup.jsonl`・`.summary.md`）: 3 条件とも 5/5 正解（B・C は 2 往復）。処理した入力は A 123,870 に対し B 225,651・C 196,515（A が −45%・−37%、p=0.008）、クレジットは A 2.35・B 2.73・C 2.75（差は誤差の範囲、p=0.66）。Codex（ChatGPT ログイン）はキャッシュ済み入力の単価が通常の 1/20 で、B・C で増える入力はほぼキャッシュに当たるため、トークンの差がクレジットにほとんど出ない。C は 5 回とも他タスクのメモを読みに行った（2〜3 回、p=0.008）。
 
+Claude（Sonnet、2026-10-03、`results/runs_followup.jsonl`・`.summary.md`）で同じ比較を取ると、Codex と違って費用にも差が出た。A は 5/5 正解で 0.108 USD、B は 5/5 聞き返して 2 往復で正解し 0.234 USD（A が −54%、p=0.008）。C は 3 回が聞き返さずに 1 往復で正解し、2 回が聞き返して 2 往復目で古い台数（8 台）の見積を出した（0.143 USD、p=0.095）。Claude はキャッシュの書き込みに料金がかかり、キャッシュ読みも通常の 1/10 なので、増えた入力がそのまま費用に乗る。
+
 ## 調査係のモデルと推論量（`researcher_effort.py`）
 
 Claude Code の A/B/C とは別に、Codex の調査係（`.codex/agents/researcher.toml`）に使うモデルと `model_reasoning_effort` を決めるための実測です（ADR 0020・0025）。
