@@ -27,7 +27,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 5. 見本で動きを確かめ終えたら `scripts/ws init` で同梱の見本を消します。消えるのは同梱時から内容を変えていないファイルだけで、書き換えたファイルと自分で足したファイルは残ります（残したファイルは実行結果に出ます。見本を試して `projects/_example/` の中身が変わっていた場合は、フォルダごと手で消して `scripts/ws index` を実行してください）。消せる見本が残っている間は起動時にエージェントへ 1 行の案内が入ります。
 
 見本は 2 か所にあります。`projects/_example/`（架空の案件）と repo 直下の `knowledges/`（架空の自社の組織図・用語・オントロジー）です。その場で自社の内容に書き換えて使うか、まとめて `scripts/ws init` で消してから自分の内容を書くか、どちらでも構いません。
-`docs/snapshots/`（規則の根拠にした Web ページの原文。約 2.2 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
+`docs/snapshots/`（規則の根拠にした Web ページの原文。約 7.4 MB）と `bench/`（計測）も、使うだけなら消して構いません。台帳（`docs/sources/`）は残しておくと、規則の数字の出所が分かります。
 
 ## 日々の使い方
 
@@ -62,7 +62,8 @@ hook は起動のたび（`/clear` や compact のあとも）に現在のタス
 Claude Code では `/clear` の前に `/rename <タスク名>` しておくと `/resume` で戻れます。起動直後に `/context` を一度見ると、AGENTS.md と hook の注入がコンテキストをどれだけ使っているか分かります。
 長い調べ物は、結論と出所だけを持ち帰るようサブエージェントに分けると、本線のコンテキストが汚れません。
 モデルと reasoning effort はセッションの最初に決めます。途中で変えると、そこから会話全体のキャッシュが作り直しになります。
-試行が失敗したら訂正で続けず `/rewind`（Esc 2 回）で戻ってから言い直します。戻った先までの会話はキャッシュ済みです。
+試行が失敗したら訂正で続けず `/rewind`（Esc 2 回）で戻ってから言い直します。戻った先までの会話はキャッシュ済みです。ただし Bash のコマンドで変えたファイルと、サブエージェントが書き換えたファイルは基本的に戻りません（チェックポイントの文書）。
+人が離れて 1 つのタスクを最後まで回したいときは、Claude Code の `/goal <終わりの条件>` が使えます。返事が終わるたびに小型モデルが会話だけを見て条件を判定し、満たすまで次のターンを始めます。判定役はコマンドも実行せず、ファイルも読まないので、条件は画面に出るもので書き、回数の上限も入れます（例: `/goal index.md の進め方がすべて [x] になり、更新した index.md の「現在地」を最後に表示している。20 ターンで満たせなければ止める`）。researcher が動いている間は判定が飛ばされ、戻ってきたあとの返事で判定されます。やめるときは `/goal clear` です。ツールの許可を求めて止まらないようにするには、`/goal` を auto mode で使います。
 `/usage` の「Prompt cache (main)」行（Claude Code 2.1.251 以降）で、直近のキャッシュ miss の回数と warm/cold を確認できます。
 従量課金で 1 セッションが長くなるなら、自動 compact の閾値を下げる調整ノブがあります（Claude Code は `/autocompact <値>` か `autoCompactWindow`、Codex は `model_auto_compact_token_limit`）。index.md に現在地が残っているので早めの compact に耐えますが、**下げすぎは逆効果**です。LangWatch の Rogerio Chaves が 2,451 セッション・287,748 API コールを集計した報告では、コストの最小点は 220,000 トークンで、170k〜316k が 10% 以内、110k を切ると再発見のステップ数が節約を上回るとされています。同じ報告は compact 直後にユーザーの訂正率が 17.7% → 41.9%（2.37 倍）に跳ね、30 ステップ以上続くことも測っています。agent-ws の既定は変えていません（1 タスク = 1 セッションなら、そもそも閾値に届く前にセッションが終わるため）。長寿命のセッションを回すなら 200k 前後にするのが、いまのところ根拠のある設定です。
 
@@ -90,7 +91,7 @@ agent-ws/
 ├── LESSONS.md             人からの指摘（1 行 1 件。hook が起動のたびに全行を差し込む）
 ├── .claude/settings.json  Claude Code の hooks 登録
 ├── .claude/skills -> ../.agents/skills
-├── .claude/agents/researcher.md  調査係サブエージェント（Claude Code・haiku）
+├── .claude/agents/researcher.md  調査係サブエージェント（Claude Code・haiku。CLAUDE.md は読まない。守らせる規則は本文に書く）
 ├── .codex/hooks.json      Codex CLI の hooks 登録（中身は同じスクリプトを呼ぶ）
 ├── .codex/config.toml     Codex CLI のプロジェクト設定（web_search を外す、調査係の既定モデル）
 ├── .codex/agents/researcher.toml  調査係サブエージェント（Codex CLI・gpt-5.6-luna）
@@ -119,7 +120,7 @@ agent-ws/
 │               └── references/   集めた情報（要点 .md と原文 .orig.md の対、文字起こしは正規化版 .normalized.md と要点 .summary.md も）
 ├── docs/                  agent-ws 自体の設計判断と規則の根拠（案件の仕事では読まない）
 │   ├── adr/               設計判断の記録（決定と理由・捨てた案。1 本 20 行以内）
-│   ├── sources/           規則の根拠台帳（委譲規則・トークン節約の 5 点。URL・取得日時・支えている規則）
+│   ├── sources/           規則の根拠台帳（委譲規則・トークン節約・ハーネスのチップスなど。URL・取得日時・支えている規則）
 │   └── snapshots/         出典ページの原文（要点 .md と原文 .orig.md の対）
 ├── tests/test_ws.py       scripts/ws の自己チェック
 ├── tests/test_onto_*.py   scripts/wsonto の自己チェック（schema・store・engine・query・export・lint・W3C 突き合わせ）
@@ -156,7 +157,7 @@ Codex CLI は hook の注入が既定で約 2,500 トークンに切られるた
 
 ### 出力（thinking）を減らす調整ノブ
 
-1 セッションの費用を単価で分けると、cache 作成が 40〜55%、出力（thinking 込み）が 22〜30%、cache 読みが 23〜38% でした（bench の A 条件 40 セッション。`bench/cost_breakdown.py`）。出力は入力の 5 倍の単価で、Sonnet 4.6 以降は過去ターンの thinking も文脈に残って入力として課金されるので、effort を下げると出力と再送の両方が減ります。bench の trap（各 5 回）では `--effort medium` で費用 −14%（p=0.046）、`--effort low` で −18%（p=0.048）、`MAX_THINKING_TOKENS=0` で −23%（p=0.12）、いずれも 5/5 正解でした。資料を作る newtask（各 5 回）でも medium は必須 8 項目を 5/5 で満たし費用 −10%（p=0.38。誤差の範囲）でした。ただし判断の重い仕事で同じとは言えないので、既定は変えていません。安く回したい仕事では `claude --effort medium` で起動するか、`.claude/settings.json` に `"effortLevel": "medium"` を足してください（Codex は `.codex/config.toml` の `model_reasoning_effort`）。effort をセッションの途中で変えるとキャッシュが作り直しになるので、最初に決めます。
+1 セッションの費用を単価で分けると、cache 作成が 40〜55%、出力（thinking 込み）が 22〜30%、cache 読みが 23〜38% でした（bench の A 条件 40 セッション。`bench/cost_breakdown.py`）。出力は入力の 5 倍の単価で、Sonnet 4.6 以降は過去ターンの thinking も文脈に残って入力として課金されるので、effort を下げると出力と再送の両方が減ります。bench の trap（各 5 回）では `--effort medium` で費用 −14%（p=0.046）、`--effort low` で −18%（p=0.048）、`MAX_THINKING_TOKENS=0` で −23%（p=0.12）、いずれも 5/5 正解でした。資料を作る newtask（各 5 回）でも medium は必須 8 項目を 5/5 で満たし費用 −10%（p=0.38。誤差の範囲）でした。ただし判断の重い仕事で同じとは言えないので、既定は変えていません。なお Opus 5.5 は Claude Code で最初から `medium` で始まり、Anthropic は `xhigh`・`max` を「上げて品質が良くなったと測れた仕事」だけに使うよう勧めています（`docs/sources/harness-tips.md` #2・#3）。安く回したい仕事では `claude --effort medium` で起動するか、`.claude/settings.json` に `"effortLevel": "medium"` を足してください（Codex は `.codex/config.toml` の `model_reasoning_effort`）。effort をセッションの途中で変えるとキャッシュが作り直しになるので、最初に決めます。
 
 ### hooks が止めるもの
 

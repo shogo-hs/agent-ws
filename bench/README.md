@@ -68,6 +68,20 @@ uv run python bench/researcher_effort.py summary
 
 結果は `results/runs_effort.jsonl`（1 行 1 run。正答率の内訳・トークン・秒）。ChatGPT ログインで走るので費用欄は無く、トークン数を API 価格で換算して読みます。
 
+## 調査係に CLAUDE.md を読ませるか（`researcher_omit.py`）
+
+Claude Code の researcher（`.claude/agents/researcher.md`）に `omitClaudeMd: true` を付けるかを決めるための実測です（ADR 0024）。
+上と同じ文字起こしを使い、本線（sonnet）が researcher に抽出を渡します。`git archive HEAD` で組んだ作業スペースの researcher.md から、
+この 1 行を消した条件（base）と足した条件（omit）を交互に走らせます。researcher 側の transcript（`<session>/subagents/*.jsonl`）から、
+1 リクエスト目の入力（固定分）・処理した入力の合計・cache 作成と、`out.md` の正答率を取ります。
+
+```
+uv run python bench/researcher_omit.py run 5
+uv run python bench/researcher_omit.py summary
+```
+
+結果は `results/runs_omit.jsonl`。材料が無ければ先に `researcher_effort.py gen` を走らせてください。
+
 実行ディレクトリは `WS_BENCH_RUNS`（既定 `/var/tmp/agent-ws-bench/runs`）の下に 1 セッション 1 つ組みます。
 作業スペースの中に置くと親の CLAUDE.md が読まれて条件が汚れるので、外に置いてください。
 起動は次のとおりで、グローバルの hooks・プラグイン・MCP を外し、プロジェクトの `.claude/settings.json`（A の hooks）と CLAUDE.md だけを載せます。
