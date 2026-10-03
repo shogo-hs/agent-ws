@@ -16,7 +16,9 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 
 ## 導入（初回だけ）
 
-1. このリポジトリを自分の場所に置きます（GitHub なら「Use this template」→ clone）。
+1. このリポジトリを自分の場所に置きます。置き方は 2 通りです（どちらも [テンプレートの更新を取り込む](#テンプレートの更新を取り込む) で更新できます）。
+   - fork: GitHub で fork して clone します。自分の作業を自分のリポジトリにコミットして残せます。
+   - ローカル運用: `git clone https://github.com/shogo-hs/agent-ws.git` したまま、作業をコミットせずに使います。`.git` は消さずに残します（更新の取り込みに使います）。手順 5 の `scripts/ws init` が push を止めます。
 2. `python` が PATH にあることを確認します（3.9 以上。追加パッケージは不要）。hooks はこの名前で起動します（Debian 系で無ければ `python-is-python3`、Windows は python.org の installer で「Add python.exe to PATH」）。
 3. 実行権限が落ちていたら `chmod +x scripts/ws` を実行します（Linux / macOS）。Windows は `python scripts/ws …` と前置きして叩きます。
 4. リポジトリの**ルートで** `claude` または `codex` を起動します。
@@ -80,7 +82,25 @@ scripts/ws task current
 scripts/ws task done projects/acme/tasks/<dir>   # 終わったタスクを閉じる（doctor が 14 日放置の doing を知らせる）
 scripts/ws doctor            # index.md や frontmatter の欠落を報告する
 scripts/ws init               # 同梱の見本（projects/_example/・knowledges/）のうち書き換えていないファイルだけを消す
+scripts/ws update             # テンプレートの更新を取り込む（ローカル運用は pull、fork はリモート template をマージ）
 scripts/ws calc '小計=3*12000' '税=int(小計*0.1)' '小計+税'   # 人に渡す数字は暗算させない（式は wsonto の式言語。任意のコードは走らない）
+```
+
+### テンプレートの更新を取り込む
+
+エージェントに「テンプレートの更新を取り込んで」と頼むと、template-update スキルが `scripts/ws update` を実行し、衝突があれば直します（ADR 0032）。
+
+- ローカル運用（origin がテンプレート本体）: `git pull --autostash` で、コミットしていない手元の変更をいったん退避し、最新版に進めてから戻します。手元とテンプレートが同じ箇所を変えたファイルだけに衝突の印が残ります。手元の変更は退避先（`git stash list`）にも残ります。
+- fork: リモート `template` が無ければ足し、マージします。GitHub の Use this template で作ったリポジトリはテンプレートと履歴がつながっていないので、初回だけ人が `git merge --allow-unrelated-histories template/main` で取り込みます（ほぼ全ファイルが衝突します）。
+
+ローカル運用では、作業がコミットされず、origin がテンプレート本体です。テンプレートに書き込める人のエージェントが push すると、案件や教訓が公開テンプレートに載ります。そこで `scripts/ws init`（と `update`）が push の宛先を `no_push` にし、`.git/hooks/pre-push` を置いて push を止めます。エージェントがこの 2 つを外す操作と、コミットしていない作業を消す操作は hook が止めます（[hooks が止めるもの](#hooks-が止めるもの)）。
+ローカル運用から自分のリポジトリへ移すときは、人が次を実行します。
+
+```
+git remote set-url origin <自分のリポジトリの URL>
+git remote set-url --push origin <自分のリポジトリの URL>
+rm .git/hooks/pre-push
+git remote add template https://github.com/shogo-hs/agent-ws.git   # 以後の取り込みは fork と同じ
 ```
 
 ## 構成
@@ -103,6 +123,7 @@ agent-ws/
 │   ├── ref-add/           情報源を references/ に記録する
 │   ├── transcript-ingest/ 文字起こしを用語集で直してナレッジ化する
 │   ├── knowledge-promote/ タスクで得た知見を knowledges/ に昇格する
+│   ├── template-update/   テンプレートの更新を取り込み、衝突を直す
 │   └── ontology-define/   業務の型・つながり・アクションを定義する（定義がある案件だけ関係する）
 ├── scripts/ws             エージェントが呼ぶ CLI（python3 の標準ライブラリだけで動く）
 ├── scripts/wsonto/        オントロジーのエンジン（定義の読み込み・照会・実行・承認・書き出し。取り決めは [scripts/wsonto/README.md](scripts/wsonto/README.md)）
@@ -174,6 +195,8 @@ Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` か�
 正規化版（`.normalized.md`）がある文字起こしの原文を Read や Grep しようとすると、hook が読む先を正規化版に読み替えます（Bash/shell 経由の `cat`/`sed`/`grep` は書き換えずに deny し、正規化版のパスを示します）。
 
 オントロジーのディレクトリ（`knowledges/ontology/` と `projects/*/knowledges/ontology/`）でエージェントが直接読めるのは、`ontology.json`・`index.md`・`questions.json` の 3 つだけです（現在のタスクの有無に関係なく）。実体・記録・実行待ち（`objects.json`・`log.jsonl`・`proposals/`）は読みも書きも拒否し、`scripts/ws onto query / show / log / act` に誘導します。ディレクトリ指定・glob・`cd` してからの相対パス・`knowledges/` の再帰の走査（`grep -r`・`rg`・`find`）も拒否します（Grep ツールで `knowledges/` を検索するときは、glob が未指定なら `*.md` を足して通します）。配下への Edit / Write / MultiEdit / NotebookEdit と、Codex CLI のファイル編集（`apply_patch`）も拒否します（`define apply` に誘導）。`onto approve` / `reject` / `adopt` を含むコマンド、セッションの環境変数を外したり疑似端末（`script`）で包んだりして `onto` を呼ぶコマンド、承認・却下の文面つきの `claude` / `codex` の起動も拒否します（承認は人だけ）。agent-ws 自体を直すときは、hook のプロセスの環境変数 `WS_ONTO_MAINT=1` で、承認まわり以外の拒否を外せます（エージェントの Bash からは hook のプロセスの環境を変えられません）。hook が止めるのは「うっかり触る」エージェントです。変数にパスを入れる・`python -c` で読む、のような回り道までは止めません。書き換えは、記録にある実体のハッシュとの不一致として `doctor` が後から見つけます。
+
+ローカル運用（`scripts/ws init` か `update` が push の宛先を `no_push` にした clone）では、現在のタスクの有無に関係なく、`git push`、push 止めを外す操作（`git remote set-url`・`git config` での pushurl / hooksPath / insteadOf の変更・`--no-verify`・`.git/hooks` と `.git/config` への書き込み）、コミットしていない作業を消す操作（`git reset --hard`・`git checkout`・`git clean`・`git restore`・`git stash drop`）を止めます（ADR 0032）。`scripts/ws` を含むコマンドもこの判定からは外しません。`repos/`（案件のコードを置く別リポジトリ）での操作は通します。
 
 ### 1 時間以上空いたあとの 1 通目を止める
 

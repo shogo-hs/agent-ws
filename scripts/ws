@@ -19,6 +19,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tarfile
 import time
@@ -73,6 +74,14 @@ WEB_CMD_RE = re.compile(r"\b(curl|wget)\b")
 # Windows の PowerShell ツール用。ls / cat / find / curl / wget は PowerShell でもエイリアスとして通るので Bash 側の語も含める
 PS_SCAN_CMD_RE = re.compile(r"(?<![\w-])(find|ls|tree|grep|rg|cat|head|tail|wc|du|Get-ChildItem|gci|dir|Select-String|sls|Get-Content|gc)\b", re.I)
 PS_WEB_CMD_RE = re.compile(r"\b(curl|wget|Invoke-WebRequest|iwr|Invoke-RestMethod|irm)\b", re.I)
+# ローカル運用（_local_only）で止める操作。push（作業が公開テンプレートに載る）、push 止めを外す操作、
+# コミットしていない作業を消す操作（作業はコミットされていないので、消えたら戻せない）。ADR 0032
+_GIT = r"\bgit(?:\s+-[cC]\s+\S+|\s+--?[\w.-]+(?:=\S+)?)*\s+"  # git -C dir / git -c k=v のあとのサブコマンド
+LOCAL_DENY_RE = re.compile(
+    _GIT + r"(?:push\b|remote\s+(?:set-url|remove|rm|rename)\b|config\b[^|;&]*(?:pushurl|hookspath|insteadof)"
+    r"|reset\b[^|;&]*--(?:hard|merge|keep)\b|clean\b|checkout\b|switch\b[^|;&]*(?:-f\b|--force|--discard-changes)"
+    r"|restore\b(?![^|;&]*--staged)|restore\b[^|;&]*(?:--worktree|\s-W\b)|stash\s+(?:drop|clear)\b)"
+    r"|--no-verify\b|\.git/(?:hooks|config)\b|\bgh\s+(?:pr\s+create|repo\s+sync)\b", re.I)
 
 
 # ---- 小道具 ---------------------------------------------------------------
@@ -276,7 +285,108 @@ def cmd_init(args):
     if (PROJECTS / "_example").is_dir():
         # 見本を試すとタスクの index.md やオントロジーの実体が変わり、記録のファイルも増える。中身を見ずには消せないので人に任せる
         print("projects/_example/ にファイルが残っている。見本を試した跡ならフォルダごと消して scripts/ws index")
+    if _guard_local_push():
+        print("テンプレート本体を clone したまま使う（ローカル運用）ので push を止めた（push の宛先を no_push にし、"
+              ".git/hooks/pre-push を置いた）。テンプレートの更新は scripts/ws update で取り込む")
     print("次: scripts/ws project new <name>")
+
+
+# ---- テンプレートの更新の取り込み・ローカル運用の push 止め（ADR 0032） ----------------
+# ローカル運用 = テンプレート本体を clone したまま、自分の作業をコミットせずに使う。origin がテンプレートなので、
+# 書き込み権限のある人のエージェントが push すると案件や教訓が公開テンプレートに載る。push の宛先・git の pre-push フック・
+# PreToolUse hook（LOCAL_DENY_RE）の 3 段で止める。
+
+TEMPLATE_URL = os.environ.get("WS_TEMPLATE_URL") or "https://github.com/shogo-hs/agent-ws.git"  # テストは一時の bare リポジトリに差し替える
+NO_PUSH = "no_push"  # 存在しない宛先。fetch はテンプレートのまま、push だけが失敗する
+PRE_PUSH = """#!/bin/sh
+# agent-ws: scripts/ws init / update が置いた。ローカル運用では作業を公開テンプレートに載せないため、push をすべて止める。
+# 自分のリポジトリで管理するなら、人が git remote set-url --push origin <自分のリポジトリの URL> を実行し、このファイルを消す。
+echo "agent-ws: ローカル運用なので push しない（.git/hooks/pre-push。README「ローカル運用」）" >&2
+exit 1
+"""
+
+
+def _git(*args) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
+
+
+def _norm_url(u: str) -> str:
+    u = u.strip().rstrip("/").lower()
+    u = re.sub(r"^git@([^:]+):", r"https://\1/", u)  # SSH の書き方を HTTPS に揃える
+    return u[:-4] if u.endswith(".git") else u
+
+
+def _origin_is_template() -> bool:
+    if not (ROOT / ".git").exists():  # WS_ROOT が別の git の中にあっても、その git の origin を見ない
+        return False
+    try:
+        url = _git("config", "--get", "remote.origin.url").stdout
+    except FileNotFoundError:  # git が無い
+        return False
+    return bool(url.strip()) and _norm_url(url) == _norm_url(TEMPLATE_URL)
+
+
+def _local_only() -> bool:
+    """ローカル運用の印（push の宛先が no_push）。PreToolUse から毎回呼ぶので git を起動せず .git/config を読む。
+    URL では決めない（テンプレートを開発する人の clone も origin がテンプレート本体なので、push を止めてはいけない）"""
+    cfg = ROOT / ".git" / "config"
+    return cfg.is_file() and re.search(rf"^\s*pushurl\s*=\s*{NO_PUSH}\s*$",
+                                       cfg.read_text(encoding="utf-8", errors="replace"), re.M) is not None
+
+
+def _guard_local_push() -> bool:
+    """origin がテンプレート本体なら push の宛先を無効にし、pre-push フックを置く。置いたら True"""
+    if not _origin_is_template():
+        return False
+    _git("remote", "set-url", "--push", "origin", NO_PUSH)
+    hook = Path(_git("rev-parse", "--git-path", "hooks/pre-push").stdout.strip())
+    hook = hook if hook.is_absolute() else ROOT / hook
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_bytes(PRE_PUSH.encode("utf-8"))  # 改行は LF のまま（Windows の Git Bash でも sh が読む）
+    hook.chmod(0o755)
+    return True
+
+
+def cmd_update(args):
+    if not (ROOT / ".git").exists():
+        die("git の管理下に無いので取り込めない。テンプレートを git clone し直し、自分のファイル（projects/・knowledges/・LESSONS.md）をコピーする")
+    if _git("ls-files", "--unmerged").stdout.strip():
+        die("前回の取り込みの衝突が残っている。git status で衝突の印があるファイルを直してから（template-update スキル）")
+    before = _git("rev-parse", "HEAD").stdout.strip()
+    span = None  # 取り込んだテンプレート側のコミットの範囲（一覧に出す）
+    if _guard_local_push() or _local_only():
+        # 未コミットの手元の変更を退避 → テンプレートの最新に進める → 戻す。手元の作業はコミットしない
+        print("ローカル運用（テンプレート本体を clone したまま使う）。push を止めたうえで origin から取り込む")
+        r = _git("pull", "--autostash", "--no-rebase", "origin", "main")
+    else:
+        if _git("remote", "get-url", "template").returncode != 0:
+            _git("remote", "add", "template", TEMPLATE_URL)
+            print(f"リモート template（{TEMPLATE_URL}）を足した")
+        f = _git("fetch", "template")
+        if f.returncode != 0:
+            die(f"git fetch template に失敗した:\n{f.stderr.strip()}")
+        base = _git("merge-base", "HEAD", "template/main").stdout.strip()
+        if not base:
+            die("テンプレートと履歴がつながっていない（GitHub の Use this template で作ったリポジトリ）。初回だけ人が "
+                "git merge --allow-unrelated-histories template/main で衝突を直す（ほぼ全ファイルが衝突する）")
+        tip = _git("rev-parse", "template/main").stdout.strip()
+        if base == tip:
+            print("取り込む更新は無い")
+            return
+        print("fork（自分のリポジトリ）。リモート template をマージする")
+        span = f"{base}..{tip}"
+        r = _git("merge", "--autostash", "--no-ff", "-m",
+                 f"テンプレート shogo-hs/agent-ws の {base[:7]}..{tip[:7]} を取り込む", "template/main")
+    after = _git("rev-parse", "HEAD").stdout.strip()
+    span = span or f"{before}..{after}"
+    log = _git("log", "--oneline", "--first-parent", span).stdout.strip() if after != before else ""
+    print(f"取り込んだ更新:\n{log}" if log else "取り込む更新は無い")
+    unmerged = sorted({ln.split("\t", 1)[1] for ln in _git("ls-files", "--unmerged").stdout.splitlines()})
+    if unmerged:
+        print("衝突したファイル（手元とテンプレートが同じ箇所を変えた。template-update スキルの手順で直す）:")
+        print("\n".join(f"  {p}" for p in unmerged))
+    if r.returncode != 0 and not unmerged:
+        die(f"取り込めなかった（ファイルは変えていない）:\n{(r.stderr or r.stdout).strip()}")
 
 
 # ---- 案件・タスク ----------------------------------------------------------
@@ -1510,6 +1620,27 @@ def _scan_roots(tool: str, tool_input: dict) -> list[str]:
     return hit
 
 
+def _local_guard(tool: str, tool_input: dict, blob: str, cwd: str) -> str | None:
+    """ローカル運用で push・push 止めの解除・未コミットの作業を消す git 操作を止める（ADR 0032）。止めるなら理由を返す。
+    scripts/ws を含むコマンドも見る（`scripts/ws index; git push` を素通りさせない）"""
+    if tool == "Read" or not _local_only():
+        return None
+    target = tool_input.get("command", "") if tool in ("Bash", "PowerShell", "shell") else blob
+    m = LOCAL_DENY_RE.search(target)
+    if not m:
+        return None
+    # repos/（案件のコードを置く別リポジトリ。各自の git で管理する）での push は通す
+    # ponytail: コマンドに repos/ が出るか cwd が repos/ の中かで見るだけ。cd で ROOT へ戻ってからの push は止められない
+    here = Path(cwd).resolve() if cwd else ROOT
+    if re.search(r"(?<![\w.-])repos/", target) or not here.is_relative_to(ROOT) or here.is_relative_to(ROOT / "repos"):
+        return None
+    return (f"[agent-ws] ローカル運用（テンプレート本体を clone したまま使う）では `{m.group(0).strip()}` を実行しない。"
+            "push は作業が公開テンプレートに載る。push 止め（push の宛先 no_push・.git/hooks/pre-push）は外さない。"
+            "reset --hard・checkout・clean・restore はコミットしていない作業を消し、戻せない。"
+            "テンプレートの更新は scripts/ws update（衝突は template-update スキルの手順で直す）。"
+            "自分のリポジトリで管理したいと言われたら、人に README の「ローカル運用」の手順を案内する（回り道で push しない）。")
+
+
 def cmd_hook_pre_tool_use(args):
     data = _stdin_json()
     tool = data.get("tool_name", "")
@@ -1518,6 +1649,10 @@ def cmd_hook_pre_tool_use(args):
     if os.name == "nt":
         tool_input = _posix_input(tool_input)
     blob = json.dumps(tool_input, ensure_ascii=False)
+    local_reason = _local_guard(tool, tool_input, blob, data.get("cwd") or "")
+    if local_reason:
+        _deny(local_reason)
+        return
     onto_result = _onto_guard(tool, tool_input, data.get("cwd") or "")
     if isinstance(onto_result, dict):
         print(json.dumps({"hookSpecificOutput": {
@@ -1661,6 +1796,9 @@ def main(argv=None):
     q = sub.add_parser("init", help="同梱の見本（架空の案件と共通ナレッジ）を消す。消すのは同梱時から内容を変えていないファイルだけ")
     q.add_argument("--manifest", action="store_true", help="（テンプレートの保守用）見本の一覧 templates/examples.json を作り直す")
     q.set_defaults(fn=cmd_init)
+
+    q = sub.add_parser("update", help="テンプレートの更新を取り込む（ローカル運用は origin から pull、fork はリモート template をマージ）")
+    q.set_defaults(fn=cmd_update)
 
     p = sub.add_parser("project", help="案件").add_subparsers(dest="sub", required=True)
     q = p.add_parser("new", help="案件フォルダを雛形から作る")
