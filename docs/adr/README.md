@@ -32,6 +32,7 @@
 | [0024](0024-researcher-omit-claude-md-and-opus55-tips.md) | researcher は CLAUDE.md を読まずに起動する。途中経過の報告だけで返事を終えない。`/goal` は README で案内するだけにする | 採用 | researcher.md に `omitClaudeMd: true`（1 リクエスト目の入力 −31%、正答率は落ちない）。AGENTS.md に途中報告で返事を終えない 1 文。Skill の effort・Stop hook の自動継続・Agent Teams などは採らない |
 | [0025](0025-codex-researcher-gpt6-luna-high.md) | Codex の調査係は gpt-6-luna・high にする（0020 を置き換え） | 採用 | 同じ抽出で gpt-5.6-luna・max と同じく 5/5 全問正解、クレジット −74%・時間 −55%。gpt-6-luna・max は高く遅く、決定を落とす回があった。Codex CLI 0.156.1 以上が要る |
 | [0026](0026-wrap-originals-in-random-id-tags.md) | ref add の原文を同じランダム ID の開始タグと終了タグで囲み、タグの中の指示は人の依頼が求めるときだけ従う | 採用 | 公式の多層防御のひとつ。3 モデル 60 回の bench では両条件とも従わず、効果は測れなかった（床効果）。Haiku はタグがあると指示に触れる回が減るので、researcher に「知らせる」を書いた |
+| [0027](0027-state-each-fixed-instruction-once.md) | 毎ターン送る固定の指示は 1 か所にだけ書き、オントロジーの使い方は定義があるときだけ注入する | 採用 | 固定分は Claude −5.1%・Codex −4.5%。trap・newtask × Claude・Codex の 80 回で正誤は落ちず、費用の差が有意だったのは Claude の newtask（−6%）だけ。OpenAI の −41〜66% は、変えられるのが固定分の約 3 割なので再現しない |
 
 ## 書き方
 

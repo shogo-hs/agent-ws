@@ -757,6 +757,20 @@ class WsFlowTest(unittest.TestCase):
         self.assertNotIn("## 次の一手", out)
         self.assertIn("次の一手（index.md より）: 顧客に見積の前提を確認する", out)
 
+    def test_session_start_injects_onto_rules_only_when_defined(self):
+        # AGENTS.md から移した節。定義の無い利用者には送らず、案件か共通に ontology.json があれば送る
+        task = self._task()
+        ctx = lambda: json.loads(self.ws("hook", "session-start", stdin="{}").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("onto query", ctx())
+        self.assertNotIn("他の tasks/ 配下は読まない", ctx())  # AGENTS.md の「禁止」と重複していたので注入からは外した
+        d = self.root / "projects/acme/knowledges/ontology"
+        d.mkdir(parents=True)
+        (d / "ontology.json").write_text("{}", encoding="utf-8")
+        self.assertIn("onto query", ctx())
+        idx = task / "index.md"  # 長すぎて短い形に落ちても渡す
+        idx.write_text(idx.read_text(encoding="utf-8") + "x" * 7000, encoding="utf-8")
+        self.assertIn("onto query", ctx())
+
     def test_hook_denies_cross_task_scans_only_with_current_task(self):
         task = self._task()
         rel = task.relative_to(self.root).as_posix()

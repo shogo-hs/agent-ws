@@ -1,6 +1,6 @@
 ---
 name: knowledge-promote
-description: タスクの中で得た知見を、案件のナレッジ（knowledges/）に昇格するとき。「ナレッジにして」「次も使えるように残して」「他のタスクでも使う」で使う。ナレッジの正本は tasks/ ではなく knowledges/。
+description: タスクの中で得た知見を、案件のナレッジ（knowledges/）に昇格するとき。「ナレッジにして」「次も使えるように残して」「他のタスクでも使う」で使う。
 ---
 # knowledge-promote
 
