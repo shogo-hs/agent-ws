@@ -1,0 +1,9 @@
+{"type": "session_meta", "payload": {"model_provider": "openai"}}
+{"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}
+{"type": "token_usage_record", "payload": {"response_id": "resp_1", "usage": {"input_tokens": 1000, "cached_input_tokens": 200, "output_tokens": 50, "reasoning_output_tokens": 10}}}
+{"type": "token_usage_record", "payload": {"response_id": "resp_1", "usage": {"input_tokens": 1000, "cached_input_tokens": 200, "output_tokens": 50, "reasoning_output_tokens": 10}}}
+{"type": "token_usage_record", "payload": {"response_id": "resp_2", "usage": {"input_tokens": 2000, "cached_input_tokens": 500, "output_tokens": 80, "reasoning_output_tokens": 20}}}
+{"type": "event_msg", "payload": {"type": "item_completed", "item": {"type": "CommandExecution", "command": ["/bin/bash", "-lc", "cat projects/acme/tasks/20260906_estimate/references/note.md"], "status": "completed"}}}
+{"type": "event_msg", "payload": {"type": "item_completed", "item": {"type": "CommandExecution", "command": ["/bin/bash", "-lc", "cat projects/acme/tasks/other_task/notes.md"], "status": "completed"}}}
+{"type": "event_msg", "payload": {"type": "item_completed", "item": {"type": "FileChange", "changes": {"__RUNDIR__/projects/acme/tasks/20260906_estimate/report.md": {"type": "update"}}, "status": "completed"}}}
+{"type": "response_item", "payload": {"type": "custom_tool_call_output", "id": "ctco_1", "call_id": "call_1", "output": [{"type": "input_text", "text": "Script failed\n"}, {"type": "input_text", "text": "Script error:\nCommand blocked by PreToolUse hook: [agent-ws] projects を横断して一覧・検索しない。. Command: ls projects/"}]}}

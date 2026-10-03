@@ -53,6 +53,33 @@ A は `.claude/settings.json` の `env` で Advisor を外しているので（A
 相談した回数と Opus が読んだ分は transcript の `usage.iterations` から `advisor_calls` / `advisor_in` / `advisor_out` に数え、モデル別の費用は `model_usage` に残ります。
 結果は `results/runs_advisor_a.jsonl`（Advisor なし）と `results/runs_advisor_v.jsonl`（あり）。判断は `docs/sources/advisor.md` から辿れます。
 
+## 本線を Codex で測る（`--agent codex`）
+
+`run` と `rescore` に `--agent codex` を付けると、本線 claude の代わりに `codex exec` で同じ条件（A/B/C・small/large・各実験）を走らせます。
+既定（`--agent` を付けない）は常に claude で、挙動も出力も変えません。
+
+```
+python3 bench/run.py run --agent codex --exp trap --scale large --model gpt-6.1-sol --effort medium -n 5 --jobs 3 --tag codex1 --results bench/results/runs_codex.jsonl
+python3 bench/run.py summary --tag codex1 --results bench/results/runs_codex.jsonl
+```
+
+- モデルは `--model`、推論量は `--effort`（Claude Code の `--effort` と同じ役。内部では `-c model_reasoning_effort=...` に渡します）。
+- `--delegate` / `--advisor` / `--env`、`--exp base`（1 ターン固定の比較）は claude 専用なので `--agent codex` と一緒には使えません（エラーで止まります）。
+- 実行ごとに一時の `CODEX_HOME`（`/tmp/codex-home-*`）を作り、`~/.codex/auth.json` だけコピーして使います。`~/.codex/config.toml` は変更しません。
+- 条件 A（agent-ws の現物。`.codex/hooks.json` を持つ）だけ `--dangerously-bypass-hook-trust` を付けます。初めて見る `CODEX_HOME` では hooks の信頼確認が通らないためです。B/C には `.codex/` 自体が無いので何もしません。
+- トークンは `in_total`（Σ input_tokens。cached を含む値）・`cached_in`（Σ cached_input_tokens）・`out_total`・`reasoning_out`・`ctx_final`（最後の input_tokens）に、rollout（`CODEX_HOME/sessions/.../rollout-*.jsonl`）の `token_usage_record`（`response_id` で重複除去）から入ります。一時の `CODEX_HOME` は実行後に消し、rollout だけを実行ディレクトリの横（`<rundir>.rollout.jsonl`。リポジトリの外）に残すので、`rescore --agent codex` で数え直せます。
+- 読み・検索・書き込み・他タスクへの立ち入り・hook の拒否は、rollout の `CommandExecution`（Bash と同じ `kind_of` / `paths_in` で判定）と `FileChange`、拒否は `custom_tool_call_output` のテキストに `[agent-ws]` を数えます。
+- 拒否されたコマンドは `CommandExecution` に出ないので、拒否文の末尾の `Command: …` を同じ判定に通して読み・検索・他タスクにも数えます（Claude 側は拒否された tool_use も数えるので揃えるため）。
+- `spawn_agent` の子スレッド（researcher）の rollout も `<rundir>.subN.rollout.jsonl` に残し、そのトークンを `sub_in`・`sub_credits` に、本数を `delegates` に入れます。`credits` は本線と子の合計です。
+- **読み・検索の回数は Claude と並べない**: Codex は `cat a b c` のように複数のファイルを 1 回のコマンドで読み、`parsed_cmd` も種別を付けない（`unknown`）ので、回数はコマンドの数です。比べるのは処理した入力・クレジット・他タスク・正誤にします。
+- タイムアウト（900 秒）ではプロセスグループごと止めます。Codex が一時の `CODEX_HOME` でログインのトークンを更新したら `~/.codex/auth.json` に書き戻します。
+- ドルの費用が無い（ChatGPT ログイン）ので、`CODEX_CREDITS`（100 万トークンあたり 入力・キャッシュ済み入力・出力。出典 `docs/sources/codex-token-saving.md` #2）でクレジットに換算した `credits` を持ちます。`summary` の「費用 USD/クレジット」列は codex の行だけ `12.34cr` のようにクレジットで出ます。単価の無いモデルは `credits=None` です。
+
+最初の計測（2026-10-03、Codex CLI 0.160.0・gpt-6.1-sol・effort medium、trap・large）は `results/runs_codex.jsonl`、集計は `results/runs_codex.summary.md`。
+A は 10 回とも正解（`correct`）、B と C は 5 回とも「どのタスクの続きか」を聞き返して止まった（Claude 側の Sonnet と同じ型）。
+A を 2 組（各 5 回）走らせた A 対 A は、処理した入力 p=0.78・クレジット p=0.90 で差が出ない。1 回の処理した入力は 80k〜177k の幅で揺れる。
+毎ターン固定で送られる分（最後のターンの入力）は約 22〜24k で、Claude Code（Sonnet、約 39k）より小さい。
+
 ## 調査係のモデルと推論量（`researcher_effort.py`）
 
 Claude Code の A/B/C とは別に、Codex の調査係（`.codex/agents/researcher.toml`）に使うモデルと `model_reasoning_effort` を決めるための実測です（ADR 0020・0025）。
