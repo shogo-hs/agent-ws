@@ -31,6 +31,7 @@
 | [0023](0023-ws-init-removes-unchanged-examples.md) | 同梱の見本は scripts/ws init で消す。消すのは同梱時から内容を変えていないファイルだけ | 採用 | `templates/examples.json` の「パス → sha256」と一致するファイルだけ消す。書き換えたファイルと足したファイルは残り、実行結果に名前が出る。消せるファイルが残っている間だけ SessionStart が 1 行案内する |
 | [0024](0024-researcher-omit-claude-md-and-opus55-tips.md) | researcher は CLAUDE.md を読まずに起動する。途中経過の報告だけで返事を終えない。`/goal` は README で案内するだけにする | 採用 | researcher.md に `omitClaudeMd: true`（1 リクエスト目の入力 −31%、正答率は落ちない）。AGENTS.md に途中報告で返事を終えない 1 文。Skill の effort・Stop hook の自動継続・Agent Teams などは採らない |
 | [0025](0025-codex-researcher-gpt6-luna-high.md) | Codex の調査係は gpt-6-luna・high にする（0020 を置き換え） | 採用 | 同じ抽出で gpt-5.6-luna・max と同じく 5/5 全問正解、クレジット −74%・時間 −55%。gpt-6-luna・max は高く遅く、決定を落とす回があった。Codex CLI 0.156.1 以上が要る |
+| [0026](0026-wrap-originals-in-random-id-tags.md) | ref add の原文を同じランダム ID の開始タグと終了タグで囲み、タグの中の指示は人の依頼が求めるときだけ従う | 採用 | 公式の多層防御のひとつ。3 モデル 60 回の bench では両条件とも従わず、効果は測れなかった（床効果）。Haiku はタグがあると指示に触れる回が減るので、researcher に「知らせる」を書いた |
 
 ## 書き方
 

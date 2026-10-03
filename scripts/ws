@@ -496,7 +496,7 @@ def cmd_ref_add(args):
     # 要点ファイル（frontmatter＋引用した記述＋使いどころ）と原文ファイル（.orig.md、frontmatter 無し）の対で保存する。
     # index には要点ファイルだけが載る（index_entries が .orig.md を除外）
     dest_orig = dest.with_name(dest.stem + ".orig.md")
-    write(dest_orig, body)
+    write(dest_orig, wrap_source(body))
     write(dest, render(TEMPLATES / "reference.md", title=title, kind=kind, source=src, via=via,
                        retrieved_at=now().isoformat(timespec="seconds"),
                        retrieved_by=os.environ.get("WS_AGENT", "unknown"),
@@ -510,6 +510,13 @@ def cmd_ref_add(args):
     print(f"原文: {shown_orig}")
     if not args.summary:
         print("summary が空。読んだら summary・「引用した記述」・「このタスクでの使いどころ」を埋める")
+
+
+def wrap_source(body: str) -> str:
+    """原文を、同じランダム ID の開始タグと終了タグで囲む（ADR 0026。Opus 5.5 ガイドの pasted_content と同じ形）。
+    資料の中の「指示」を、人の依頼と区別させるため。書き手は ID を知らないので、閉じタグを偽造しても区切りにならない。"""
+    rid = os.urandom(2).hex()
+    return f'<source_content id="{rid}">\n{body.rstrip(chr(10))}\n</source_content id="{rid}">\n'
 
 
 # 原文節は要点ファイルの最後の節。本文（Web ページの Markdown）にも「## 見出し」が出るので、次の見出しで止めず末尾まで取る
