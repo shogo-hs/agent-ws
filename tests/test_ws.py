@@ -126,7 +126,7 @@ class WsFlowTest(unittest.TestCase):
         idx = next((self.root / "projects/acme/tasks").glob("*_t1")) / "index.md"
         idx.write_text(idx.read_text(encoding="utf-8").replace(
             "## 次の一手\n", "## 次の一手\n次は承認の道具を作る。\n", 1), encoding="utf-8")
-        self.ws("task", "done")
+        self.ws("task", "done", "--no-promote", "テスト")
         out = self.ws("hook", "session-start", stdin="{}").stdout
         self.assertIn("未設定", out)
         self.assertIn("直前に完了したタスク: projects/acme/tasks/", out)
@@ -223,7 +223,7 @@ class WsFlowTest(unittest.TestCase):
         # セッション 1 が完了にしても、セッション 2 の現在のタスクは残る
         self.ws("task", "use", f"projects/acme/tasks/{y.name}", env=e2)
         self.hook("Bash", {"command": "scripts/ws task done"}, sid=s1)
-        self.ws("task", "done", env=e1)
+        self.ws("task", "done", "--no-promote", "テスト", env=e1)
         self.assertIn("status: done", (x / "index.md").read_text(encoding="utf-8"))
         self.assertNotIn("status: done", (y / "index.md").read_text(encoding="utf-8"))
         self.assertIn(y.name, self.ws("task", "current", env=e2).stdout)
@@ -289,7 +289,7 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(self.hook("Bash", {"command": "grep -r 見積 bench/"}), "deny")
         self.assertEqual(self.hook("Read", {"file_path": str(self.root / "bench/README.md")}), "deny")
         self.assertIsNone(self.hook("Bash", {"command": "ls /var/tmp/agent-ws-bench/runs"}))  # 外のパスは止めない
-        self.ws("task", "done")
+        self.ws("task", "done", "--no-promote", "テスト")
         self.assertIsNone(self.hook("Read", {"file_path": "bench/corpus/projects/acme/index.md"}))  # 保守中は通す
 
     def test_hook_is_fail_open_on_garbage(self):
@@ -798,7 +798,7 @@ class WsFlowTest(unittest.TestCase):
         for tool, inp in allow:
             self.assertIsNone(self.hook(tool, inp), (tool, inp))
         # 現在のタスクが無ければ横断は止めない（agent-ws 自体を直すときの grep を邪魔しない）
-        self.ws("task", "done")
+        self.ws("task", "done", "--no-promote", "テスト")
         self.assertIsNone(self.hook("Grep", {"pattern": "単価"}))
         self.assertIsNone(self.hook("Bash", {"command": "find projects -maxdepth 3"}))
 
@@ -921,7 +921,7 @@ class WsFlowTest(unittest.TestCase):
         self.assertIn("8 台", out)
         self.assertIn("窓口は山田さん。（出所 001_", out)  # 002 にはあるが 001 を出所にした
         self.assertEqual(self.ws("doctor", check=False).stdout.count("が出所に無い"), 3)
-        self.ws("task", "done")
+        self.ws("task", "done", "--no-promote", "テスト")
         self.assertNotIn("出所に無い", self.ws("doctor", check=False).stdout)  # 完了したタスクは見ない（出所のナレッジは後で変わる）
 
     # ---- 共通ナレッジ（repo 直下 knowledges/。ADR 0015） ----
@@ -1048,7 +1048,7 @@ class WsFlowTest(unittest.TestCase):
         # 別セッションが b を進めている最中でも、path 指定なら a だけ閉じられ current は b のまま
         e1 = {"CLAUDE_CODE_SESSION_ID": "sess-1"}
         self.assertIn(b.name, self.ws("task", "current", env=e1).stdout)
-        out = self.ws("task", "done", a_rel, env=e1).stdout
+        out = self.ws("task", "done", "--no-promote", "テスト", a_rel, env=e1).stdout
         self.assertIn(f"完了: {a_rel}", out)
         self.assertNotIn("解除", out)
         self.assertIn("status: done", (a / "index.md").read_text(encoding="utf-8"))
@@ -1077,8 +1077,99 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(self.ws("task", "done", check=False).returncode, 1)  # current が無いので path 無しは拒否
         # 引数なしは従来どおり current を閉じて解除する
         self.ws("task", "use", c_rel)
-        self.assertIn("解除", self.ws("task", "done").stdout)
+        self.assertIn("解除", self.ws("task", "done", "--no-promote", "テスト").stdout)
         self.assertFalse((self.root / ".ws/current").exists())
+
+    def test_task_done_asks_for_promotion_and_direct_done_is_denied(self):
+        """task done は knowledges が変わっていなければ止め、昇格の確認か --no-promote の理由を求める（ADR 0033）。"""
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "a")
+        a = next((self.root / "projects/acme/tasks").glob("*_a"))
+        idx = a / "index.md"
+        self.assertRegex(idx.read_text(encoding="utf-8"), r"(?m)^knowledges_digest: [0-9a-f]{16}$")
+        # 止まる。理由は昇格の確認と --no-promote。状態も現在のタスクも、hook が外したセッションの写しも元のまま
+        s1, e1 = "sess-1", {"CLAUDE_CODE_SESSION_ID": "sess-1"}
+        self.hook("Bash", {"command": "scripts/ws task done"}, sid=s1)
+        r = self.ws("task", "done", check=False, env=e1)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("knowledges に残すものはあるか", r.stderr)
+        self.assertIn('--no-promote "<人の答え>"', r.stderr)
+        self.assertNotIn("task use", r.stderr)
+        self.assertIn("status: doing", idx.read_text(encoding="utf-8"))
+        self.assertIn(a.name, (self.root / ".ws/sessions" / f"{s1}.current").read_text(encoding="utf-8"))
+        self.assertIn(a.name, self.ws("task", "current", env=e1).stdout)
+        # 空の理由は拒否
+        self.assertEqual(self.ws("task", "done", "--no-promote", "  ", check=False).returncode, 1)
+        # 昇格すれば通り、digest は空になる（doctor の「task done を経ずに done」に当たらない）
+        self.ws("know", "new", "acme", "決定")
+        self.ws("task", "done", env=e1)
+        text = idx.read_text(encoding="utf-8")
+        self.assertIn("status: done", text)
+        self.assertRegex(text, r"(?m)^knowledges_digest: $")
+        self.assertNotIn("task done を経ずに", self.ws("doctor", check=False).stdout)
+        # 共通ナレッジの変更も昇格に数える
+        self.ws("task", "new", "acme", "c")
+        (self.root / "knowledges").mkdir(exist_ok=True)
+        (self.root / "knowledges/001_組織.md").write_text("---\ntitle: 組織\n---\n", encoding="utf-8")
+        self.ws("task", "done")
+        # path 指定で現在のタスク以外を閉じるときは、先に task use を案内する。理由は 1 行にして一覧に出す
+        self.ws("task", "new", "acme", "b")
+        b = next((self.root / "projects/acme/tasks").glob("*_b"))
+        b_rel = b.relative_to(self.root).as_posix()
+        self.ws("task", "new", "acme", "d")
+        r = self.ws("task", "done", b_rel, check=False)
+        self.assertIn(f"scripts/ws task use {b_rel}", r.stderr)
+        self.assertIn(f"scripts/ws task done {b_rel} --no-promote", r.stderr)
+        # path 指定で止まっても、hook が外したセッションの写しは元のタスク（d）に戻る。「X/../X」でも素通りしない
+        s2, e2 = "sess-2", {"CLAUDE_CODE_SESSION_ID": "sess-2"}
+        self.ws("task", "current", env=e2)  # 写しを作る
+        self.hook("Bash", {"command": f"scripts/ws task done {b_rel}"}, sid=s2)
+        self.ws("task", "use", b_rel, env={"CLAUDE_CODE_SESSION_ID": "sess-other"})  # 止まる前に別セッションが切り替える
+        self.assertEqual(self.ws("task", "done", f"{b_rel}/../{b.name}", check=False, env=e2).returncode, 1)
+        self.assertIn("_d", (self.root / ".ws/sessions" / f"{s2}.current").read_text(encoding="utf-8"))
+        self.ws("task", "done", b_rel, "--no-promote", '人が「無い」と\n答えた "引用"')
+        self.assertIn("no_promote: \"人が「無い」と 答えた '引用'\"", (b / "index.md").read_text(encoding="utf-8"))
+        self.assertIn("（昇格なし: 人が「無い」と 答えた '引用'）",
+                      (self.root / "projects/acme/tasks/index.md").read_text(encoding="utf-8"))
+
+        # hook: 現在のタスクの index.md を done にするファイル編集は、どの道具でも拒否する
+        d = next((self.root / "projects/acme/tasks").glob("*_d"))
+        self.ws("task", "use", d.relative_to(self.root).as_posix())  # 上で別セッションが b に切り替えたのを戻す
+        di = str(d / "index.md")
+        body = (d / "index.md").read_text(encoding="utf-8")
+        self.assertEqual(self.hook("Edit", {"file_path": di, "old_string": "status: doing", "new_string": "status: done"}), "deny")
+        self.assertEqual(self.hook("Edit", {"file_path": di, "old_string": "doing", "new_string": "done"}), "deny")
+        self.assertEqual(self.hook("MultiEdit", {"file_path": di, "edits": [
+            {"old_string": "summary: \"\"", "new_string": "summary: \"s\""},
+            {"old_string": "doing", "new_string": "done"}]}), "deny")
+        self.assertEqual(self.hook("Write", {"file_path": di, "content": body.replace("doing", "done")}), "deny")
+        d_rel = d.relative_to(self.root).as_posix()
+        patch = f"*** Begin Patch\n*** Update File: {d_rel}/index.md\n@@\n-status: doing\n+status: done\n*** End Patch\n"
+        self.assertEqual(self.hook("apply_patch", {"command": patch}), "deny")
+        self.assertEqual(self.hook("Write", {"file_path": di, "content": body.replace("doing", "done").replace("\n", "\r\n")}), "deny")
+        moved = patch.replace("@@", f"*** Move to: {d_rel}/index.md\n@@")
+        self.assertEqual(self.hook("apply_patch", {"command": moved}), "deny")
+        # done 以外の編集は通す
+        self.assertIsNone(self.hook("Edit", {"file_path": di, "old_string": "summary: \"\"", "new_string": "summary: \"s\""}))
+        self.assertIsNone(self.hook("apply_patch", {"command": patch.replace("+status: done", "+status: doing")}))
+        self.assertIsNone(self.hook("Edit", {"file_path": str(self.root / "notes/index.md"),
+                                             "old_string": "doing", "new_string": "done"}))
+        # シェルで直接 done にされたものは doctor が拾う
+        (d / "index.md").write_text(body.replace("status: doing", "status: done"), encoding="utf-8")
+        self.assertIn(f"{d_rel}: task done を経ずに done", self.ws("doctor", check=False).stdout)
+
+    def test_task_done_in_unset_session_does_not_close_other_sessions_task(self):
+        """現在のタスクが未設定（空の写し）のセッションの task done は、別セッションのタスクを閉じない。"""
+        self.ws("project", "new", "acme")
+        e1, e2 = {"CLAUDE_CODE_SESSION_ID": "sess-1"}, {"CLAUDE_CODE_SESSION_ID": "sess-2"}
+        self.ws("task", "new", "acme", "a", env=e1)
+        self.ws("task", "done", "--no-promote", "テスト", env=e1)  # sess-1 は未設定になる
+        self.ws("task", "new", "acme", "b", env=e2)
+        b = next((self.root / "projects/acme/tasks").glob("*_b"))
+        self.hook("Bash", {"command": "scripts/ws task done --no-promote y"}, sid="sess-1")
+        self.assertEqual(self.ws("task", "done", "--no-promote", "y", check=False, env=e1).returncode, 1)
+        self.assertIn("status: doing", (b / "index.md").read_text(encoding="utf-8"))
+        self.assertIn(b.name, self.ws("task", "current", env=e2).stdout)
 
 
     def test_hook_treats_powershell_like_bash(self):
@@ -1100,7 +1191,7 @@ class WsFlowTest(unittest.TestCase):
         # Bash 側の検知語は増えていない（Linux の挙動を変えない）
         self.assertIsNone(self.hook("Bash", {"command": "Invoke-WebRequest https://example.com/x"}))
         self.assertIsNone(self.hook("Bash", {"command": "gci -Recurse"}))
-        self.ws("task", "done")
+        self.ws("task", "done", "--no-promote", "テスト")
         self.assertIsNone(self.hook("PowerShell", {"command": "Get-ChildItem projects -Recurse"}))
 
     def test_posix_input_normalizes_windows_paths_without_breaking_json_escapes(self):

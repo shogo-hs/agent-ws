@@ -38,6 +38,7 @@
 | [0030](0030-check-deliverable-quotes-against-cited-source.md) | タスクの成果物の「出所: … 引用: 「…」」を、出所が指すファイルと照合する | 採用 | issue #36 の事故 12 か所のうち 6 か所を誤検知 0 で拾う（0028・0029 は 0）。実際の成果物の引用 410 件で誤検知 0 |
 | [0031](0031-arxiv-html-instead-of-pdf.md) | arXiv の論文は PDF ではなく HTML 版を本文にし、版で固定して保存する | 採用 | 実際の台帳の引用 64 件で一字一句の一致は HTML 版 49・PDF（段組なし）45・PDF（`-layout`）0。数式・表は LaTeX ソースで補う。r.jina.ai は arXiv の HTML 版に 331 バイトしか返さないので直接取る |
 | [0032](0032-local-only-clone-and-template-update.md) | テンプレートを clone したまま使う運用（ローカル運用）を受け入れ、push を 3 段（宛先・pre-push・hook）で止める。更新の取り込みは `scripts/ws update` | 採用 | 古い版の clone に未コミットの作業 3 つを加えて `git pull --autostash` で最新に上げ、3 つとも残った。宛先だけだと URL の直書きで 1 行で回り込める |
+| [0033](0033-ask-for-promotion-on-task-done.md) | `task done` は knowledges が変わっていなければ止め、昇格するものが無いかを人に聞かせる（無ければ `--no-promote "<理由>"`）。status を直接 done にする編集は hook で拒否する | 採用 | 判定は knowledges 本文のハッシュ。mtime は clone・`ws update` で素通り側に壊れ、`updated` は止めすぎる側に壊れる |
 
 ## 書き方
 

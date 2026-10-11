@@ -53,7 +53,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「承認 P-0001」（人が送る） | UserPromptSubmit hook がその発言を拾い、積んだときの前提ではなく今の状態で検査し直してから実行待ちを反映する。エージェントは何もしない（自分では承認できない） |
 | 「うちの業務の型を定義して」 | ontology-define スキル。「答えたい質問」を書くところから始める |
 | 「結論を先に書いて」「その言い方はやめて」 | `scripts/ws lesson add "報告は結論を先に書く（読む人はチャットしか見ない）"` で `LESSONS.md` に 1 行残す。案件固有なら `--project acme` で案件の決まりごとへ |
-| 「このタスクは終わり」 | `scripts/ws task done`。状態を done にし、「現在のタスク」を外す |
+| 「このタスクは終わり」 | `scripts/ws task done`。状態を done にし、「現在のタスク」を外す。タスクの間に `knowledges/` が変わっていなければ止まり、エージェントが昇格の候補を見せて「残すものはあるか」と聞く。無いと答えたら `--no-promote "<答え>"` で閉じる（ADR 0033） |
 
 質問に答えるだけ・数分で終わる作業にはタスクを切る必要はありません。ファイルを作る、調べた情報を残す、日をまたぐ、のどれかに当てはまるときにタスクにします。
 
@@ -80,6 +80,7 @@ scripts/ws project new acme
 scripts/ws task new acme kickoff --title "キックオフ準備"
 scripts/ws task current
 scripts/ws task done projects/acme/tasks/<dir>   # 終わったタスクを閉じる（doctor が 14 日放置の doing を知らせる）
+scripts/ws task done --no-promote "昇格するものは無い"   # knowledges に残すものが無いと確かめたとき
 scripts/ws doctor            # index.md や frontmatter の欠落を報告する
 scripts/ws init               # 同梱の見本（projects/_example/・knowledges/）のうち書き換えていないファイルだけを消す
 scripts/ws update             # テンプレートの更新を取り込む（ローカル運用は pull、fork はリモート template をマージ）
@@ -189,6 +190,8 @@ Codex CLI は hook の注入が既定で約 2,500 トークンに切られるた
 `projects/`・案件直下・`tasks/` 直下を対象にした `find` / `ls` / `grep -r` / `rg` / `tree` と、パス指定の無い Grep / Glob も現在のタスクがある間は拒否します（他タスクの本文が結果に混ざり、読む導線としては `projects/index.md` と `tasks/index.md` で足りるため）。現在のタスクが無いとき（agent-ws 自体を直すとき）は止めません。repo 直下の `knowledges/`（共通）は現在のタスクの有無に関係なく読み書きできます。現在のタスクがある間は `bench/` と `docs/snapshots/` も読ませません（案件の仕事に関係なく、grep が当たると数十 KB の原文を丸ごと読んでしまうため）。
 Claude Code は `.claude/settings.json`、Codex CLI は `.codex/hooks.json` から同じスクリプトを呼びます。
 起動時の案内（SessionStart）は JSON の `additionalContext` で返します。Claude Code は素のテキストでも文脈に足しますが、Codex CLI は JSON でないと文脈に載りません（0.153.4 で確認）。
+
+タスクの `index.md` の status を done にするファイル編集（Edit / MultiEdit / Write と Codex の `apply_patch`）も拒否します。完了は `scripts/ws task done` だけが付け、そこで `knowledges/` への昇格を確かめます。シェルで書き換えたものは `doctor` が「task done を経ずに done」として出します（ADR 0033）。
 
 「`mkdir` ではなく `scripts/ws task new` を使う」は規約とスキルで指示しているだけで、hook では止めていません。エージェントが手でフォルダを作ってしまう事故が実際に起きたら、`projects/*/tasks/` 配下への直接の `mkdir` を hook で止める形に足せます。
 
