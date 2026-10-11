@@ -84,7 +84,7 @@ LOCAL_DENY_RE = re.compile(
     r"|--no-verify\b|\.git/(?:hooks|config)\b|\bgh\s+(?:pr\s+create|repo\s+sync)\b", re.I)
 
 
-# ---- 小道具 ---------------------------------------------------------------
+# ---- ヘルパー ---------------------------------------------------------------
 
 def now() -> dt.datetime:
     return dt.datetime.now().astimezone()
