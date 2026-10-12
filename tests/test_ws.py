@@ -125,12 +125,12 @@ class WsFlowTest(unittest.TestCase):
         self.ws("task", "new", "acme", "t1")
         idx = next((self.root / "projects/acme/tasks").glob("*_t1")) / "index.md"
         idx.write_text(idx.read_text(encoding="utf-8").replace(
-            "## 次の一手\n", "## 次の一手\n次は承認の道具を作る。\n", 1), encoding="utf-8")
+            "## 次の一手\n", "## 次の一手\n次は承認のツールを作る。\n", 1), encoding="utf-8")
         self.ws("task", "done", "--no-promote", "テスト")
         out = self.ws("hook", "session-start", stdin="{}").stdout
         self.assertIn("未設定", out)
         self.assertIn("直前に完了したタスク: projects/acme/tasks/", out)
-        self.assertIn("次は承認の道具を作る。", out)
+        self.assertIn("次は承認のツールを作る。", out)
 
     def test_session_start_reads_next_step(self):
         self.ws("project", "new", "acme")

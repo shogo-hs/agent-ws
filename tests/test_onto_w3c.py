@@ -1,4 +1,4 @@
-"""export.py の書き出しと W3C の道具（rdflib・pySHACL・owlrl）との突き合わせ。
+"""export.py の書き出しと W3C のツール（rdflib・pySHACL・owlrl）との突き合わせ。
 
 rdflib / pyshacl / owlrl が import できない環境では丸ごと skip する。
 

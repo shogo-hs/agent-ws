@@ -1,6 +1,6 @@
 """wsonto — 照会（query / show）。
 
-エージェントが業務の状態を読むための道具。取り決めは `scripts/wsonto/README.md` の
+エージェントが業務の状態を読むためのツール。取り決めは `scripts/wsonto/README.md` の
 「query.py — 照会」を参照。実行時は標準ライブラリだけで動く（Python 3.9 以上）。
 """
 from __future__ import annotations

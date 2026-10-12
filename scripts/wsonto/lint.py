@@ -197,7 +197,7 @@ def _lint_thin_description(own_actions: dict, findings: list) -> None:
             findings.append(Finding(
                 "warn", THIN_DESCRIPTION, f"action_types.{aname}",
                 f"'{aname}' の description が短すぎる（{len(desc)} 字）。"
-                "エージェントは説明文で道具を選ぶので、いつ使うか・何をするかを書く",
+                "エージェントは説明文でツールを選ぶので、いつ使うか・何をするかを書く",
             ))
 
 

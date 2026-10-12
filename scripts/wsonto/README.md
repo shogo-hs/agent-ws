@@ -147,7 +147,7 @@ lint(schema: Schema, objects: dict | None = None) -> list[Finding]     # Finding
 | `GOD_OBJECT` | objects があるとき: 実体 10 件以上の型で、埋まっている率が 30% 未満のプロパティが 5 つ以上 | warn |
 | `TIME_MACHINE` | 型名が `V<数字>` `Old` `Bak` `Copy` `Backup` で終わる | warn |
 | `SILO_NAME` | 別の型と label か aliases が重なる | warn |
-| `THIN_DESCRIPTION` | アクションの description が無いか 20 字未満（エージェントは説明文で道具を選ぶ） | warn |
+| `THIN_DESCRIPTION` | アクションの description が無いか 20 字未満（エージェントは説明文でツールを選ぶ） | warn |
 
 ### store.py — 実体の保管
 
