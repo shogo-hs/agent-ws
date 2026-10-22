@@ -1682,6 +1682,16 @@ def _fm_status(text: str) -> str:
     return s.group(1) if s else ""
 
 
+def _git_stage_only(cmd: str) -> bool:
+    """cd と git add / commit / status だけからなるコマンドか。どれもタスクの本文を出力しないので、
+    タスクの外からでも通す（task done で現在のタスクを外したあと、閉じたタスクをコミットできるように）。
+    $( ) とバッククォートは中で何でも動くので通さない。引用符の中の区切り文字で割れた断片は先頭が合わず、止める側に倒れる"""
+    if "$(" in cmd or "`" in cmd:
+        return False
+    segs = [s.strip() for s in re.split(r"&&|\|\|?|;|\n", cmd) if s.strip()]
+    return bool(segs) and all(re.match(r"(cd\s|git\s+(add|commit|status)\b)", s) for s in segs)
+
+
 def _done_edit(tool: str, tool_input: dict) -> bool:
     """tasks/*/index.md の status を done にするファイル編集か。done は task done だけが付ける（昇格の確認を飛ばさせない。ADR 0033）。
     シェルでの書き換えは追いきれないので見ない（doctor が knowledges_digest の残りで拾う）"""
@@ -1766,7 +1776,7 @@ def cmd_hook_pre_tool_use(args):
         return
     cur_key = tuple(Path(rel(cur)).parts[1:4:2]) if cur else None  # (案件, タスク)
     hits = {(p, t) for p, t in TASK_RE.findall(blob) if t != "index.md"}
-    if hits:
+    if hits and not (tool in ("Bash", "shell") and _git_stage_only(tool_input.get("command", ""))):
         others = sorted(f"projects/{p}/tasks/{t}" for p, t in hits if (p, t) != cur_key)
         if others:
             if cur:
