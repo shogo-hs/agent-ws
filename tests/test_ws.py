@@ -801,6 +801,11 @@ class WsFlowTest(unittest.TestCase):
         self.ws("task", "done", "--no-promote", "テスト")
         self.assertIsNone(self.hook("Grep", {"pattern": "単価"}))
         self.assertIsNone(self.hook("Bash", {"command": "find projects -maxdepth 3"}))
+        # 閉じたタスクのコミットは止めない（本文を出力しない git の操作だけ）。読む操作は引き続き止める
+        self.assertIsNone(self.hook("Bash", {"command": f"cd . && git add {rel}/index.md && git commit -q -m 完了 && git status --short"}))
+        for cmd in (f"git add {rel}/index.md && cat {rel}/index.md", f"git diff {rel}",
+                    f'git commit -m "$(cat {rel}/index.md)"', f"cat {rel}/index.md"):
+            self.assertEqual(self.hook("Bash", {"command": cmd}), "deny", cmd)
 
     def test_ref_add_skips_same_source_unless_forced(self):
         task = self._task()
