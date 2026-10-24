@@ -5,6 +5,7 @@
 """
 import datetime as dt
 import http.server
+import io
 import json
 import os
 import re
@@ -54,6 +55,20 @@ class WsFlowTest(unittest.TestCase):
         if not r.stdout.strip():
             return None
         return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"]
+
+    def test_index_skips_other_tasks(self):
+        self.ws("project", "new", "acme")
+        self.ws("task", "new", "acme", "old")
+        old = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+        self.ws("task", "new", "acme", "cur")
+        (old / "notes.md").write_text("---\ntitle: メモ\n---\n", encoding="utf-8")
+        before = (old / "index.md").read_text(encoding="utf-8")
+        self.ws("index")
+        self.assertEqual((old / "index.md").read_text(encoding="utf-8"), before)
+        cur = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.name.endswith("_cur"))
+        (cur / "notes.md").write_text("---\ntitle: メモ\n---\n", encoding="utf-8")
+        self.ws("index")
+        self.assertIn("notes.md", (cur / "index.md").read_text(encoding="utf-8"))
 
     def test_flow(self):
         # 案件とタスク
@@ -446,6 +461,80 @@ class WsFlowTest(unittest.TestCase):
             thread.join(timeout=5)
             server.server_close()
 
+    def test_fetch_direct_decodes_shift_jis_csv(self):
+        body = "地域,人数\n富山県,100\n".encode("cp932")
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):  # noqa: D401 — テスト出力を静かにする
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=UTF-8")  # e-Stat と同じく名乗りと中身が違う
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            self.ws("project", "new", "acme")
+            self.ws("task", "new", "acme", "t1")
+            task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+            self.ws("ref", "add", f"http://127.0.0.1:{port}/x.csv", "--summary", "s", env={"WS_NO_JINA": "1"})
+            orig = next((task / "references").glob("*.orig.md"))
+            self.assertIn("富山県,100", orig.read_text(encoding="utf-8"))
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+    def test_fetch_direct_converts_xlsx_to_text(self):
+        import zipfile
+        m = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("xl/workbook.xml", f'<workbook xmlns="{m}" xmlns:r="{r}"><sheets>'
+                       '<sheet name="表1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+            z.writestr("xl/_rels/workbook.xml.rels",
+                       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                       '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+            z.writestr("xl/sharedStrings.xml", f'<sst xmlns="{m}"><si><t>富山県</t></si></sst>')
+            z.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="{m}"><sheetData><row r="1">'
+                       '<c r="A1" t="s"><v>0</v></c><c r="C1"><v>95599</v></c></row></sheetData></worksheet>')
+        body = buf.getvalue()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):  # noqa: D401 — テスト出力を静かにする
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            self.ws("project", "new", "acme")
+            self.ws("task", "new", "acme", "t1")
+            task = next(p for p in (self.root / "projects/acme/tasks").iterdir() if p.is_dir())
+            self.ws("ref", "add", f"http://127.0.0.1:{port}/x", "--summary", "s", env={"WS_NO_JINA": "1"})
+            orig = next((task / "references").glob("*.orig.md")).read_text(encoding="utf-8")
+            self.assertIn("## シート: 表1", orig)
+            self.assertIn("富山県,,95599", orig)  # 空のセル（B1）は列の位置で埋める
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
     def test_hook_denies_webfetch_with_current_task(self):
         self.ws("project", "new", "acme")
         self.ws("task", "new", "acme", "t1")
@@ -467,6 +556,10 @@ class WsFlowTest(unittest.TestCase):
         self.assertIsNone(self.hook("Bash", {"command": "curl http://127.0.0.1:8000/"}))
         self.assertIsNone(self.hook(
             "Bash", {"command": "python3 scripts/ws ref add https://example.com/x --summary s"}))
+        # URL の中の …/ontology/… はオントロジーのフォルダではない（Palantir のドキュメントを止めていた）
+        self.assertIsNone(self.hook(
+            "Bash", {"command": "scripts/ws ref add https://www.palantir.com/docs/foundry/" + "ontology/overview/"}))
+        self.assertEqual(self.hook("Bash", {"command": "cat " + "ontology/x.md"}), "deny")
 
     def test_hook_post_tool_use_lists_search_result_urls(self):
         self.ws("project", "new", "acme")
