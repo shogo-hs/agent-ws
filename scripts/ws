@@ -229,11 +229,20 @@ def update_index(d: Path) -> bool:
     return True
 
 
+def _task_of(d: Path) -> Path | None:
+    """d が入っているタスクフォルダ（projects/<案件>/tasks/<タスク>）。タスクの外なら None。"""
+    parts = d.relative_to(PROJECTS).parts
+    return PROJECTS.joinpath(*parts[:3]) if len(parts) >= 3 and parts[1] == "tasks" else None
+
+
 def cmd_index(args):
     if args.dir:
         targets = [Path(args.dir).resolve()]
     else:
-        targets = [p.parent for p in PROJECTS.rglob("index.md")] + [COMMON]
+        # 現在のタスク以外のタスクフォルダは書かない（他のタスクに触れない規約。tasks/index.md の一覧は更新する）
+        cur = current_task(session_id())
+        targets = [d for d in (p.parent for p in PROJECTS.rglob("index.md"))
+                   if (t := _task_of(d)) is None or t == cur] + [COMMON]
     n = sum(update_index(d) for d in targets)
     print(f"index.md を {n} 件更新した")
 
@@ -566,16 +575,62 @@ def _is_local_host(url: str) -> bool:
         re.match(r"^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.", host))
 
 
+def _xlsx_text(raw: bytes) -> str:
+    """Excel（.xlsx）を、シートごとの見出しとカンマ区切りの行のテキストにする（統計表の数値を ref add で残すため）。
+    .xlsx は XML を zip にまとめたもの。文字列のセルは共有文字列表の番号で入っている。空のセルは列の位置（A1 の A）で埋める。
+    """
+    import zipfile
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+          "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
+    z = zipfile.ZipFile(io.BytesIO(raw))
+    shared = []
+    if "xl/sharedStrings.xml" in z.namelist():
+        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
+            shared.append("".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")))
+    rels = {r.get("Id"): r.get("Target") for r in ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))}
+    out = []
+    for sheet in ET.fromstring(z.read("xl/workbook.xml")).find("m:sheets", ns):
+        target = rels[sheet.get(f"{{{ns['r']}}}id")].lstrip("/")
+        path = target if target.startswith("xl/") else f"xl/{target}"
+        out.append(f"## シート: {sheet.get('name')}")
+        for row in ET.fromstring(z.read(path)).iter(f"{{{ns['m']}}}row"):
+            cells: dict[int, str] = {}
+            for c in row.findall("m:c", ns):
+                col = 0
+                for ch in re.match(r"[A-Z]+", c.get("r", "A")).group():
+                    col = col * 26 + ord(ch) - 64
+                v = c.find("m:v", ns)
+                if c.get("t") == "s" and v is not None:
+                    text = shared[int(v.text)]
+                elif c.get("t") == "inlineStr":
+                    text = "".join(t.text or "" for t in c.iter(f"{{{ns['m']}}}t"))
+                else:
+                    text = v.text if v is not None and v.text else ""
+                cells[col] = text.replace("\n", " ").replace(",", "，") if text else ""
+            if any(cells.values()):
+                out.append(",".join(cells.get(i, "") for i in range(1, max(cells) + 1)))
+    return "\n".join(out)
+
+
 def _fetch_direct(url: str) -> tuple[str, str]:
     req = urllib.request.Request(url, headers={"User-Agent": "agent-ws/0.1 (+scripts/ws ref add)"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             ctype = r.headers.get_content_type()
-            charset = r.headers.get_content_charset() or "utf-8"
+            charset = r.headers.get_content_charset()
             if ctype == "application/pdf":
                 die(f"PDF は ref add で読めない（バイナリのまま保存される）: {url}。"
                     "arXiv なら abs か html の URL を渡す。それ以外は paper-read スキルの「PDF しか無いとき」に従う")
-            body = r.read().decode(charset, errors="replace")
+            raw = r.read()
+            if raw.startswith(b"PK\x03\x04") and b"xl/workbook.xml" in raw:
+                return "", _xlsx_text(raw)
+            if raw.startswith(b"\xd0\xcf\x11\xe0"):
+                die(f"古い形式の Excel（.xls）は ref add で読めない: {url}。.xlsx か CSV の版を探す")
+            # 官公庁の CSV（e-Stat など）は、文字コードの指定が無いか UTF-8 と名乗ったまま Shift_JIS のことが多い
+            try:
+                body = raw.decode(charset or "utf-8")
+            except (UnicodeDecodeError, LookupError):
+                body = raw.decode("cp932", errors="replace")
     except SystemExit:
         raise
     except Exception as e:  # noqa: BLE001 — 取得失敗は理由を見せて止まるだけでよい
@@ -589,7 +644,7 @@ def _fetch_direct(url: str) -> tuple[str, str]:
 
 def fetch(url: str) -> tuple[str, str, str]:
     """本文を取る。r.jina.ai を第一選択にし、JS 描画・Cloudflare 保護のページでも本文を残す。
-    500 バイト未満、または本文がエラー応答（error / {"code" で始まる）なら直接取得に落ちる。
+    500 バイト未満、本文がエラー応答（error / {"code" で始まる）、または置換文字が 10 個以上なら直接取得に落ちる。
     戻り値の経路（"jina" / "direct"）は reference の frontmatter に via として残す。
     """
     if not os.environ.get("WS_NO_JINA") and not _is_local_host(url):
@@ -600,9 +655,11 @@ def fetch(url: str) -> tuple[str, str, str]:
                 raw = r.read()
             if len(raw) >= 500 and not raw.startswith((b"error", b'{"code"')):
                 body = raw.decode("utf-8", errors="replace")
-                first = body.split("\n", 1)[0]
-                title = first[len("Title:"):].strip() if first.startswith("Title:") else ""
-                return title, body, "jina"
+                # jina は Shift_JIS の CSV を UTF-8 として読み、文字を置換文字（U+FFFD）にしてしまう。そのときは直接取得へ
+                if body.count("\ufffd") < 10:
+                    first = body.split("\n", 1)[0]
+                    title = first[len("Title:"):].strip() if first.startswith("Title:") else ""
+                    return title, body, "jina"
         except Exception:  # noqa: BLE001 — jina が失敗したら直接取得へ
             pass
     title, body = _fetch_direct(url)
@@ -1014,7 +1071,7 @@ def deliverable_misses(task: Path) -> list[str]:
 
 LESSONS_HEAD = ("# LESSONS — 人からの指摘\n"
                 "（1 指摘 1 行「- 〜のとき、〜する（理由）」。`scripts/ws lesson add` で足す。"
-                f"{LESSONS_MAX} 行を超えたら統合するか AGENTS.md・doctor の検査へ昇格して減らす）\n\n")
+                f"{LESSONS_MAX} 行を超えたらスキル固有はそのスキルの「つまずきどころ」へ、案件固有は lesson add --project へ移し、残りは統合するか AGENTS.md・doctor の検査へ昇格して減らす）\n\n")
 
 
 def lesson_lines() -> list[str]:
@@ -1056,7 +1113,7 @@ def cmd_lesson_add(args):
     n = len(lesson_lines())
     print(f"追加: LESSONS.md（{n} 行）")
     if n > LESSONS_MAX:
-        print(f"{LESSONS_MAX} 行を超えた。統合するか AGENTS.md・doctor の検査へ昇格して減らす")
+        print(f"{LESSONS_MAX} 行を超えた。スキル固有はそのスキルの「つまずきどころ」へ、案件固有は lesson add --project へ移し、残りは統合するか AGENTS.md・doctor の検査へ昇格して減らす")
 
 
 # ---- 点検 ------------------------------------------------------------------
@@ -1067,7 +1124,7 @@ def cmd_doctor(args):
         die("projects/ が無い")
     if len(lesson_lines()) > LESSONS_MAX:
         problems.append(f"LESSONS.md が {len(lesson_lines())} 行（上限 {LESSONS_MAX}）。"
-                        "統合するか AGENTS.md・doctor の検査へ昇格して減らす")
+                        "スキル固有はそのスキルの「つまずきどころ」へ、案件固有は lesson add --project へ移し、残りは統合するか AGENTS.md・doctor の検査へ昇格して減らす")
     # 共通ナレッジは案件の外で腐る（Ubie「人手で維持する台帳は必ず腐る」）ので、担当と鮮度をここで数える
     for k in sorted(COMMON.glob("*.md")) if COMMON.is_dir() else []:
         if k.name == "index.md":
@@ -1172,6 +1229,7 @@ _ONTO_DIR_RE = re.compile(r"knowledges/ontology(?![\w-])")  # 末尾の / が無
 # 「オントロジーへの言及」: knowledges/ontology（後ろが / か語の切れ目）、または knowledges/ を伴わない
 # ontology/<名前>（cd .../knowledges && cat ontology/objects.json の形。語頭・空白・引用符・=・/ の直後）
 _ONTO_MENTION_RE = re.compile(_ONTO_DIR_RE.pattern + r"|(?:^|[\s'\"=/])ontology/(?=\S)")
+_HTTP_URL_RE = re.compile(r"\bhttps?://\S+")
 _ONTO_STATE_NAME_RE = re.compile(r"(?<![\w.-])(?:objects\.json|log\.jsonl|proposals|\.lock)(?![\w-])")
 _ONTO_STATE_TOKEN_RE = re.compile(r"(?<![\w.-])(?:objects\.json|log\.jsonl)(?![\w-])")
 _ONTO_GLOB_CHAR_RE = re.compile(r"[*?\[]")
@@ -1357,7 +1415,8 @@ def _onto_guard(tool: str, tool_input: dict, cwd: str = "") -> str | dict | None
             return _ONTO_INSIDE_MSG  # cd knowledges/ontology && cat objects.json の形。パスを付けて読めば足りる
         if _ONTO_STATE_TOKEN_RE.search(cmd) and "tests/fixtures" not in cmd:
             return _ONTO_STATE_MSG  # ディレクトリ名が無くても objects.json / log.jsonl が語として出たら拒否
-        if _ONTO_MENTION_RE.search(cmd) and not _onto_shell_mention_ok(cmd):
+        # http(s) の URL はファイルのパスではない（ref add で Palantir のドキュメントの …/ontology/… を止めない）
+        if _ONTO_MENTION_RE.search(_HTTP_URL_RE.sub("", cmd)) and not _onto_shell_mention_ok(cmd):
             return _ONTO_STATE_MSG if _ONTO_STATE_NAME_RE.search(cmd) else _ONTO_READ_MSG
         return _onto_knowledges_scan_reason(cmd, cwd)
     return None
