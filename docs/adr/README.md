@@ -39,6 +39,7 @@
 | [0031](0031-arxiv-html-instead-of-pdf.md) | arXiv の論文は PDF ではなく HTML 版を本文にし、版で固定して保存する | 採用 | 実際の台帳の引用 64 件で一字一句の一致は HTML 版 49・PDF（段組なし）45・PDF（`-layout`）0。数式・表は LaTeX ソースで補う。r.jina.ai は arXiv の HTML 版に 331 バイトしか返さないので直接取る |
 | [0032](0032-local-only-clone-and-template-update.md) | テンプレートを clone したまま使う運用（ローカル運用）を受け入れ、push を 3 段（宛先・pre-push・hook）で止める。更新の取り込みは `scripts/ws update` | 採用 | 古い版の clone に未コミットの作業 3 つを加えて `git pull --autostash` で最新に上げ、3 つとも残った。宛先だけだと URL の直書きで 1 行で回り込める |
 | [0033](0033-ask-for-promotion-on-task-done.md) | `task done` は knowledges が変わっていなければ止め、昇格するものが無いかを人に聞かせる（無ければ `--no-promote "<理由>"`）。status を直接 done にする編集は hook で拒否する | 採用 | 判定は knowledges 本文のハッシュ。mtime は clone・`ws update` で素通り側に壊れ、`updated` は止めすぎる側に壊れる |
+| [0034](0034-dont-take-user-suggestions-at-face-value.md) | 依頼の中の人の案は未検証の仮説として扱い、誤りなら手を動かす前に言う | 採用 | XYEval（arXiv 2609.23939）で誤った案 1 文で最大 −46.7%。測れた対策は一般的な警告の文だけで一部しか効かない。AGENTS.md に 4 行、lesson add の前の確認に 1 文。決めるのは人。効果は bench で未測定 |
 
 ## 書き方
 
