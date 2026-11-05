@@ -41,7 +41,8 @@
 | [0033](0033-ask-for-promotion-on-task-done.md) | `task done` は knowledges が変わっていなければ止め、昇格するものが無いかを人に聞かせる（無ければ `--no-promote "<理由>"`）。status を直接 done にする編集は hook で拒否する | 採用 | 判定は knowledges 本文のハッシュ。mtime は clone・`ws update` で素通り側に壊れ、`updated` は止めすぎる側に壊れる |
 | [0034](0034-dont-take-user-suggestions-at-face-value.md) | 依頼の中の人の案は未検証の仮説として扱い、誤りなら手を動かす前に言う | 採用 | XYEval（arXiv 2609.23939）で誤った案 1 文で最大 −46.7%。測れた対策は一般的な警告の文だけで一部しか効かない。AGENTS.md に 4 行、lesson add の前の確認に 1 文。決めるのは人。効果は bench で未測定 |
 | [0036](0036-parallel-sessions-start-unset-and-commit-own-files.md) | 起動したセッションは未設定で始め、コミットはそのセッションが書いたファイルだけにする | 採用 | 同じ clone で並行するセッションのタスクと変更を混ぜない |
-| [0037](0037-record-files-written-in-bash.md) | Bash の実行中に変わったファイルも、そのセッションが書いたものとして記録する | 採用 | 実行の前後の時刻と git の変更一覧で拾う。Claude Code だけ |
+| [0037](0037-record-files-written-in-bash.md) | Bash の実行中に変わったファイルも、そのセッションが書いたものとして記録する | 0038 で置き換え | 実行の前後の時刻と git の変更一覧で拾う。Claude Code だけ |
+| [0038](0038-dont-attribute-bash-writes.md) | Bash で書いたファイルはどのセッションのものとも決めず、タスクのフォルダはパスで決める | 採用 | 誤りを取りこぼしの側に倒す。Claude Code と Codex で同じ動き |
 
 ## 書き方
 

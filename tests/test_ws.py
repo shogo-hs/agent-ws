@@ -255,45 +255,56 @@ class WsFlowTest(unittest.TestCase):
         self.assertEqual(self.hook("Read", {"file_path": str(y / "index.md")}, sid=s1), "deny")
 
     def test_commit_takes_only_own_session_files(self):
-        """同じ clone の 2 セッション。commit と task done は、タスクのフォルダとそのセッションが書いたファイルだけを入れる（ADR 0036）。"""
+        """同じ clone の 2 セッション。commit と task done は、今のタスクのフォルダと、そのセッションが Edit・Write・ws で
+        書いたファイルだけを入れる。Bash で書いたファイルと、他のセッションが今作業しているタスクのフォルダは入れない（ADR 0036・0038）。"""
         git = lambda *a: subprocess.run(["git", "-C", str(self.root), *a], capture_output=True, text=True, check=True).stdout
+        head = lambda: set(git("show", "--name-only", "--format=", "HEAD").split())
+        r = lambda p: p.relative_to(self.root).as_posix()
         git("init", "-q")
         git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
         self.env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
         self.ws("project", "new", "acme")
         e1, e2 = {"CLAUDE_CODE_SESSION_ID": "sess-1"}, {"CODEX_THREAD_ID": "sess-2"}
+        tasks = self.root / "projects" / "acme" / "tasks"
+        # セッション 1 はタスク C で下書きを Write してから、タスク A に移る（C の書き込みは A のコミットに入る）
+        self.ws("task", "new", "acme", "c", env=e1)
+        c = next(tasks.glob("*_c"))
+        self.hook("Write", {"file_path": str(c / "draft.md"), "content": "c"}, sid="sess-1")
+        (c / "draft.md").write_text("c", encoding="utf-8")
         self.ws("task", "new", "acme", "a", env=e1)
         self.ws("task", "new", "acme", "b", env=e2)
-        a, b = (next((self.root / "projects/acme/tasks").glob(f"*_{s}")) for s in ("a", "b"))
-        # セッション 1 は Edit でスキルを、lesson add で LESSONS.md を書く。セッション 2 は Codex の apply_patch で別のファイルを書く
-        skill = self.root / "skill.md"
-        self.hook("Write", {"file_path": str(skill), "content": "x"}, sid="sess-1")
-        skill.write_text("x", encoding="utf-8")
+        a, b = next(tasks.glob("*_a")), next(tasks.glob("*_b"))
+        # セッション 1 は Write でスキルを、lesson add で LESSONS.md を、Bash で by_bash.md を書く。
+        # セッション 2 は Codex の apply_patch で other.md を書き、自分のタスク B に書きかけを置く
+        self.hook("Write", {"file_path": str(self.root / "skill.md"), "content": "x"}, sid="sess-1")
+        (self.root / "skill.md").write_text("x", encoding="utf-8")
         self.ws("lesson", "add", "教訓", env=e1)
+        self.hook("Bash", {"command": "python3 gen.py"}, sid="sess-1")
+        (self.root / "by_bash.md").write_text("z", encoding="utf-8")
         self.hook("apply_patch", {"command": "*** Begin Patch\n*** Add File: other.md\n+y\n*** End Patch"}, sid="sess-2")
         (self.root / "other.md").write_text("y", encoding="utf-8")
         (b / "notes.md").write_text("書きかけ", encoding="utf-8")
-        # セッション 1 が Bash の中で書いたファイルは、実行前後の hook が拾う。実行前に変わっていたファイルは拾わない
-        bash = self.root / "by_bash.md"
-        time.sleep(0.05)
-        self.hook("Bash", {"command": "python3 gen.py"}, sid="sess-1")
-        bash.write_text("z", encoding="utf-8")
-        self.ws("hook", "post-tool-use", stdin=json.dumps({"session_id": "sess-1", "tool_name": "Bash", "tool_input": {}}))
         out = self.ws("commit", "acme: a を進める", env=e1).stdout
-        files = set(git("show", "--name-only", "--format=", "HEAD").split())
-        self.assertIn("skill.md", files)
-        self.assertIn("LESSONS.md", files)
-        self.assertIn("by_bash.md", files)
-        self.assertIn(f"projects/acme/tasks/{a.name}/index.md", files)
-        self.assertFalse(any(f.startswith(f"projects/acme/tasks/{b.name}") or f == "other.md" for f in files), files)
-        self.assertIn(f"projects/acme/tasks/{b.name}/notes.md", out)  # 残りは一覧に出る
-        # セッション 2 の task done は B と other.md をコミットし、完了のコミットにする
+        files = head()
+        for f in ("skill.md", "LESSONS.md", r(a / "index.md"), r(c / "draft.md")):
+            self.assertIn(f, files)
+        self.assertFalse(any(f.startswith(r(b)) or f in ("other.md", "by_bash.md") for f in files), files)
+        self.assertIn("by_bash.md", out)  # Bash で書いたものと他のセッションの書きかけは残りの一覧に出る
+        self.assertIn(r(b / "notes.md"), out)
+        # セッション 2 の task done は B と other.md を完了のコミットにし、記録を消す
         self.ws("task", "done", "--no-promote", "テスト", env=e2)
         self.assertEqual(git("log", "-1", "--format=%s"), "acme: タスク b を完了にする\n")
-        files = set(git("show", "--name-only", "--format=", "HEAD").split())
+        files = head()
         self.assertIn("other.md", files)
-        self.assertIn(f"projects/acme/tasks/{b.name}/notes.md", files)
+        self.assertIn(r(b / "notes.md"), files)
         self.assertNotIn("skill.md", files)
+        self.assertFalse((self.root / ".ws" / "sessions" / "sess-2.touched").exists())
+        # セッション 2 がタスク C を引き継ぐと、セッション 1 の記録にある C のファイルはセッション 1 のコミットに入らない
+        self.ws("task", "use", r(c), env=e2)
+        (c / "draft.md").write_text("c2", encoding="utf-8")
+        (self.root / "skill.md").write_text("x2", encoding="utf-8")
+        self.ws("commit", "acme: a を進める 2", env=e1)
+        self.assertEqual(head(), {"skill.md"})
 
     def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
         sid = "sess-1"
