@@ -540,11 +540,14 @@ def cmd_task_done(args):
     LAST_DONE.write_text(rel(t) + "\n", encoding="utf-8")
     print(f"完了: {rel(t)}" + ("（現在のタスクを解除した）" if released or not args.path else ""))
     _commit_own(t, sid, f"{project_of(t)}: タスク {t.name.split('_', 1)[-1]} を完了にする")
+    if sid:
+        _sess(sid, "touched").unlink(missing_ok=True)  # 次のタスクのコミットに前のタスクの記録を持ち越さない
 
 
 def _commit_own(task: Path | None, sid: str | None, msg: str):
-    """タスクのフォルダと、このセッションが書いたファイル（.touched）のうち変更のあるものだけをコミットする。
-    残った変更は一覧で出す（他のセッションの作業か、Bash で書き換えて記録に無いもの）。ADR 0036"""
+    """今のタスクのフォルダと、このセッションが Edit・Write・ws で書いたファイル（.touched）のうち変更のあるものだけをコミットする。
+    記録にあっても、他のセッションが今作業しているタスクのフォルダの中は入れない。Bash で書いたファイルは誰のものか
+    決められないので入れず、残りの一覧に出す。ADR 0036・0038"""
     if _git("rev-parse", "--git-dir").returncode != 0:
         return
     def changed(*paths):
@@ -553,7 +556,11 @@ def _commit_own(task: Path | None, sid: str | None, msg: str):
     rec = _sess(sid, "touched") if sid else None
     paths = {rel(task)} if task else set()
     if rec and rec.exists():
-        paths |= set(rec.read_text(encoding="utf-8").splitlines()) - {""}
+        others = {f.read_text(encoding="utf-8").strip() for f in SESSIONS.glob("*.current") if f.name != f"{sid}.current"}
+        for r in set(rec.read_text(encoding="utf-8").splitlines()) - {""}:
+            m = TASK_RE.match(r)
+            if not (m and m.group(2) != "index.md" and m.group(0) in others - {rel(task) if task else ""}):
+                paths.add(r)
     mine = changed(*sorted(paths)) if paths else []
     if mine:
         _git("add", "-A", "--", *mine)
@@ -565,8 +572,8 @@ def _commit_own(task: Path | None, sid: str | None, msg: str):
         print("コミットする変更が無い")
     left = changed()
     if left:
-        print("コミットしなかった変更（他のセッションの作業か、Bash で書き換えて記録に無いもの。"
-              "このセッションの変更なら人に確かめてから git add と git commit で入れる）:\n"
+        print("コミットしなかった変更（他のセッションの作業か、Bash で書いたもの）。"
+              "このセッションのコマンドで書いたと分かるものだけを git commit -- <パス> で足す（他のセッションの変更は入れない）:\n"
               + "\n".join(f"  {p}" for p in left[:20]) + (f"\n  ほか {len(left) - 20} 件" if len(left) > 20 else ""))
 
 
@@ -1840,9 +1847,6 @@ def cmd_hook_pre_tool_use(args):
     if os.name == "nt":
         tool_input = _posix_input(tool_input)
     blob = json.dumps(tool_input, ensure_ascii=False)
-    if sid and tool in ("Bash", "PowerShell"):
-        SESSIONS.mkdir(parents=True, exist_ok=True)
-        _sess(sid, "bash_start").write_text(str(time.time()), encoding="utf-8")  # 実行後に post-tool-use が書いたファイルを拾う
     local_reason = _local_guard(tool, tool_input, blob, data.get("cwd") or "")
     if local_reason:
         _deny(local_reason)
@@ -1978,26 +1982,9 @@ def cmd_statusline(args):
     print(" | ".join(p for p in parts if p))
 
 
-def _record_bash_writes(sid: str):
-    """Bash の実行中に変わったファイル（git の変更一覧のうち、実行前の時刻より後に更新されたもの）を .touched に足す。
-    ponytail: 同じ時間に他のセッションが書いたファイルも拾う。分けるならファイルの書き込みの監視が要る。
-    Codex は PostToolUse を登録していないので記録されない（commit の残りの一覧に出る）"""
-    start = _sess(sid, "bash_start")
-    if not start.exists():
-        return
-    t0 = float(start.read_text(encoding="utf-8") or 0)
-    for e in _git("status", "--porcelain", "-z", "--no-renames", "--untracked-files=all").stdout.split("\0"):
-        f = ROOT / e[3:]
-        if e and f.is_file() and f.stat().st_mtime >= t0:
-            _touch(f, sid)
-
-
 def cmd_hook_post_tool_use(args):
     """WebSearch の結果 URL を文脈に足す。読むなら ref add へ誘導する（WebFetch は pre-tool-use が止める）。"""
     data = _stdin_json()
-    if data.get("tool_name") in ("Bash", "PowerShell") and data.get("session_id"):
-        _record_bash_writes(data["session_id"])
-        return
     if data.get("tool_name") != "WebSearch" or not current_task(data.get("session_id")):
         return
     urls: list[str] = []

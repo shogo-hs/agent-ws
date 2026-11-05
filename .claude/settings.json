@@ -51,7 +51,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "WebSearch|Bash",
+        "matcher": "WebSearch",
         "hooks": [
           {
             "type": "command",
