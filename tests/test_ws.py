@@ -273,10 +273,17 @@ class WsFlowTest(unittest.TestCase):
         self.hook("apply_patch", {"command": "*** Begin Patch\n*** Add File: other.md\n+y\n*** End Patch"}, sid="sess-2")
         (self.root / "other.md").write_text("y", encoding="utf-8")
         (b / "notes.md").write_text("書きかけ", encoding="utf-8")
+        # セッション 1 が Bash の中で書いたファイルは、実行前後の hook が拾う。実行前に変わっていたファイルは拾わない
+        bash = self.root / "by_bash.md"
+        time.sleep(0.05)
+        self.hook("Bash", {"command": "python3 gen.py"}, sid="sess-1")
+        bash.write_text("z", encoding="utf-8")
+        self.ws("hook", "post-tool-use", stdin=json.dumps({"session_id": "sess-1", "tool_name": "Bash", "tool_input": {}}))
         out = self.ws("commit", "acme: a を進める", env=e1).stdout
         files = set(git("show", "--name-only", "--format=", "HEAD").split())
         self.assertIn("skill.md", files)
         self.assertIn("LESSONS.md", files)
+        self.assertIn("by_bash.md", files)
         self.assertIn(f"projects/acme/tasks/{a.name}/index.md", files)
         self.assertFalse(any(f.startswith(f"projects/acme/tasks/{b.name}") or f == "other.md" for f in files), files)
         self.assertIn(f"projects/acme/tasks/{b.name}/notes.md", out)  # 残りは一覧に出る
