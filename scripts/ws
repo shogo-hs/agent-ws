@@ -113,6 +113,21 @@ def render(template: Path, **kw) -> str:
 def write(path: Path, text: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+    _touch(path)
+
+
+def _touch(path: Path, sid: str | None = None):
+    """このセッションが書いたファイルを .ws/sessions/<sid>.touched に足す。commit はこれとタスクのフォルダだけを入れる
+    （同じ clone の他のセッションの書きかけを混ぜない。ADR 0036）。セッションが分からない端末からは記録しない"""
+    sid = sid or session_id()
+    try:
+        r = Path(path).resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return  # リポジトリの外
+    if sid:
+        SESSIONS.mkdir(parents=True, exist_ok=True)
+        with _sess(sid, "touched").open("a", encoding="utf-8") as f:
+            f.write(r + "\n")
 
 
 def slugify(s: str) -> str:
@@ -524,6 +539,40 @@ def cmd_task_done(args):
     LAST_DONE.parent.mkdir(exist_ok=True)
     LAST_DONE.write_text(rel(t) + "\n", encoding="utf-8")
     print(f"完了: {rel(t)}" + ("（現在のタスクを解除した）" if released or not args.path else ""))
+    _commit_own(t, sid, f"{project_of(t)}: タスク {t.name.split('_', 1)[-1]} を完了にする")
+
+
+def _commit_own(task: Path | None, sid: str | None, msg: str):
+    """タスクのフォルダと、このセッションが書いたファイル（.touched）のうち変更のあるものだけをコミットする。
+    残った変更は一覧で出す（他のセッションの作業か、Bash で書き換えて記録に無いもの）。ADR 0036"""
+    if _git("rev-parse", "--git-dir").returncode != 0:
+        return
+    def changed(*paths):
+        out = _git("status", "--porcelain", "-z", "--no-renames", "--untracked-files=all", "--", *paths).stdout
+        return [e[3:] for e in out.split("\0") if e]
+    rec = _sess(sid, "touched") if sid else None
+    paths = {rel(task)} if task else set()
+    if rec and rec.exists():
+        paths |= set(rec.read_text(encoding="utf-8").splitlines()) - {""}
+    mine = changed(*sorted(paths)) if paths else []
+    if mine:
+        _git("add", "-A", "--", *mine)
+        r = _git("commit", "-q", "-m", msg, "--", *mine)
+        if r.returncode != 0:
+            die(f"コミットできなかった:\n{(r.stderr or r.stdout).strip()}")
+        print(f"コミット: {len(mine)} ファイル（{msg}）")
+    else:
+        print("コミットする変更が無い")
+    left = changed()
+    if left:
+        print("コミットしなかった変更（他のセッションの作業か、Bash で書き換えて記録に無いもの。"
+              "このセッションの変更なら人に確かめてから git add と git commit で入れる）:\n"
+              + "\n".join(f"  {p}" for p in left[:20]) + (f"\n  ほか {len(left) - 20} 件" if len(left) > 20 else ""))
+
+
+def cmd_commit(args):
+    sid = session_id()
+    _commit_own(current_task(sid), sid, args.message)
 
 
 # ---- 情報源 ----------------------------------------------------------------
@@ -1091,6 +1140,7 @@ def _append_to_section(path: Path, name: str, line: str) -> bool:
         return False
     body = "\n".join(kept + [line]) + "\n\n"
     path.write_text(text[:m.start(1)] + body + text[m.end(1):], encoding="utf-8")
+    _touch(path)
     return True
 
 
@@ -1110,6 +1160,7 @@ def cmd_lesson_add(args):
         LESSONS.write_text(LESSONS_HEAD, encoding="utf-8")
     with LESSONS.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+    _touch(LESSONS)
     n = len(lesson_lines())
     print(f"追加: LESSONS.md（{n} 行）")
     if n > LESSONS_MAX:
@@ -1550,9 +1601,12 @@ def cmd_hook_session_start(args):
     if sid:
         SESSIONS.mkdir(parents=True, exist_ok=True)
         if source in ("startup", "clear"):
-            # current も捨てる: 新しいセッションは最後に設定したタスク（.ws/current）から始める
-            for kind in ("last_stop", "warned", "blocked_prompt", "current"):
+            for kind in ("last_stop", "warned", "blocked_prompt", "current", "touched"):
                 _sess(sid, kind).unlink(missing_ok=True)
+            if source == "startup":
+                # 新しいセッションは未設定（空の写し）から始める。.ws/current は他のセッションが作業中のタスクかもしれない。
+                # /clear は .ws/current を引き継ぐ（task use → /clear で移る手順のため）。ADR 0036
+                _sess(sid, "current").write_text("", encoding="utf-8")
         elif source == "compact":
             _mark_stop(sid)  # 要約のリクエストが今飛んだので、タイマーはここから
         cutoff = time.time() - 7 * 86400
@@ -1572,7 +1626,7 @@ def cmd_hook_session_start(args):
     if not t:
         _emit_context("[agent-ws] 現在のタスクは未設定。着手するときは task-start スキル"
               "（scripts/ws task new <project> <slug>）。案件一覧は projects/index.md。\n"
-              + _last_done_block() + common + onto + tail)
+              + _last_set_block() + _last_done_block() + common + onto + tail)
         return
     meta, body = read_frontmatter(t / "index.md")
     proj = project_of(t)
@@ -1594,6 +1648,13 @@ def cmd_hook_session_start(args):
     _emit_context(head + f"まず {rel(t)}/index.md を読む。ナレッジは projects/{proj}/knowledges/index.md から必要なものだけ開く。"
                   + ("共通ナレッジ（自社の組織・用語）は knowledges/index.md から。" if common else "") + "\n"
                   f"次の一手（index.md より）: {_section(body, '次の一手')}" + onto + tail)
+
+
+def _last_set_block() -> str:
+    """最後に task use / new されたタスク（.ws/current）。起動したセッションは引き継がないので、続きの候補として見せる"""
+    t = current_task()
+    return (f"最後に設定されたタスク: {rel(t)}（別のセッションが作業中かもしれない）。"
+            f"その続きと言われたら scripts/ws task use {rel(t)}。\n") if t else ""
 
 
 def _last_done_block() -> str:
@@ -1876,6 +1937,21 @@ def cmd_hook_pre_tool_use(args):
                 shown = rel(norm) if norm.resolve().is_relative_to(ROOT) else str(norm)
                 _deny(f"[agent-ws] 正規化前の文字起こしは読まない（誤変換に引きずられる）。正規化版を読む: {shown}")
                 return
+    elif sid:
+        for p in _edited_paths(tool, tool_input, data.get("cwd") or ""):
+            _touch(p, sid)
+
+
+def _edited_paths(tool: str, tool_input: dict, cwd: str) -> list[Path]:
+    """ファイルを書く道具の書き先。Bash での書き換えは追えないので見ない（commit が残りとして一覧に出す）"""
+    if tool == "apply_patch":  # Codex
+        names = re.findall(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$", str(tool_input.get("command", "")), re.M)
+    elif tool in ("Edit", "MultiEdit", "Write", "NotebookEdit"):
+        names = [tool_input.get("file_path") or tool_input.get("notebook_path") or ""]
+    else:
+        return []
+    base = Path(cwd) if cwd else ROOT
+    return [base / n.strip() for n in names if n.strip()]  # 絶対パスなら base は無視される
 
 
 def cmd_statusline(args):
@@ -1999,6 +2075,9 @@ def main(argv=None):
     q.add_argument("dir", nargs="?", help="省略時は projects/ 以下すべてと knowledges/（共通）")
     q.set_defaults(fn=cmd_index)
 
+    c = sub.add_parser("commit", help="タスクのフォルダとこのセッションが書いたファイルだけをコミットする（他のセッションの変更を混ぜない）")
+    c.add_argument("message", help="コミットメッセージ（例: 「travel: 〜を足す」）")
+    c.set_defaults(fn=cmd_commit)
     le = sub.add_parser("lesson", help="人からの指摘（教訓）").add_subparsers(dest="sub", required=True)
     q = le.add_parser("add", help="LESSONS.md に 1 行足す（--project なら案件の決まりごとへ）")
     q.add_argument("text", help="「〜のとき、〜する（理由）」の 1 行")

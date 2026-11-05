@@ -40,7 +40,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 | 「ACME 社の案件を作って。Kubernetes 移行の支援」 | `scripts/ws project new acme` で案件フォルダを作り、`projects/acme/index.md` の「概要」を書く |
 | 「acme の見積タスクを始めて」 | task-start スキル。`scripts/ws task new acme estimate` でタスクフォルダを作って「現在のタスク」にし、`index.md` の「目的」と「進め方」を書く |
 | 「続きをやって」 | task-resume スキル。起動時に hook が差し込んだ現在のタスクの `index.md` を読み、「次の一手」から再開する |
-| 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）か新しいセッション（Codex）を促す |
+| 「kickoff のタスクに切り替えて」 | `scripts/ws task use projects/acme/tasks/<フォルダ名>`。そのあと `/clear`（Claude Code）を促す。Codex なら新しいセッションで同じ `task use` |
 | 「この URL を調べて」「この資料を読んで」 | `scripts/ws ref add <URL>` で本文丸ごとを references/ に残してから読む（WebFetch は hook が止めて ref add に誘導する） |
 | 「この論文を読みたい」（arXiv の URL） | paper-read スキル。`scripts/ws ref add <URL>` が URL の形（abs・pdf・html）を問わず、PDF ではなく arXiv の HTML 版を版で固定して保存する（HTML 版が無い・変換エラーがあるときは LaTeX ソースも）。通読は researcher に渡して詳細ノートを書かせ、本線で専門外の人向けのまとめを書く。どちらの引用も doctor で原文と照合する |
 | 「大量の資料を読んでまとめて」 | researcher（haiku / gpt-6-luna）に渡し、結論と出所だけ受け取る |
@@ -59,7 +59,7 @@ AI エージェント（Claude Code / OpenAI Codex CLI）に仕事の案件を�
 
 ### セッションの切り方
 
-1 タスク = 1 セッションにします。新しいタスクは新しいセッションで始め、別のタスクに移るときは切り替えを頼んだあと、Claude Code なら `/clear`、Codex CLI なら新しいセッションを開きます。
+1 タスク = 1 セッションにします。新しいタスクは新しいセッションで始め、別のタスクに移るときは、Claude Code なら切り替えを頼んだあと `/clear`、Codex CLI なら新しいセッションを開いてから切り替えを頼みます。
 ただし、セッションを始めるたびに開始時の書き込み（約 15k トークン。cache 作成の単価は読みの 20 倍で、trap の費用の約 4 割）を払うので、質問に答えるだけの用事にセッションを切らないでください。
 hook は起動のたび（`/clear` や compact のあとも）に現在のタスクを差し込むので、切り替え忘れが起きにくくなっています。
 Claude Code では `/clear` の前に `/rename <タスク名>` しておくと `/resume` で戻れます。起動直後に `/context` を一度見ると、AGENTS.md と hook の注入がコンテキストをどれだけ使っているか分かります。
@@ -317,7 +317,7 @@ SessionStart hook が案件のナレッジ一覧と同じ形で一覧行を差�
 
 - **ルートで起動してください。** サブディレクトリで起動すると、ルートの `.claude/settings.json` の hooks が読まれません（Claude Code 2.1.261 で確認）。
 - **Claude Code の Advisor（相談役モデル）は外しています**（`.claude/settings.json` の `env` の `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`）。Advisor は相談のたびに固定分ごと会話全文を Opus に非キャッシュで読ませます。agent-ws の仕事では正誤に効かず（5/5 対 5/5）、相談が起きた本だけ費用が 3.4〜3.7 倍になりました（[ADR 0017](docs/adr/0017-disable-claude-code-advisor.md)）。戻すならその行を消してください（`/advisor` も使えるようになります）。
-- `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しいセッションと `/clear` のあとは、最後に設定したタスク（`.ws/current`）から始まります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
+- `.ws/current` は git 管理外です。人ごと・マシンごとに「現在のタスク」は違います。同じ clone で複数のセッションを並行させることはできます。現在のタスクはセッションごとに `.ws/sessions/<session_id>.current` に写して持つので、片方の `task use` がもう片方に影響しません（セッションは Claude Code なら環境変数 `CLAUDE_CODE_SESSION_ID`、Codex CLI なら `CODEX_THREAD_ID` で見分けます）。新しく起動したセッションは未設定で始まり、最後に設定したタスク（`.ws/current`）を候補として案内します（他のセッションが作業中かもしれないため。ADR 0036）。`/clear` のあとは `.ws/current` から始まります。コミットは `scripts/ws commit "<メッセージ>"` か `task done` に任せると、タスクのフォルダとそのセッションが Edit・Write・`scripts/ws` で書いたファイルだけが入り、他のセッションの書きかけは残ります。端末から直接叩く `scripts/ws task current` はセッションに紐付かないので `.ws/current` を返します。
 - **Windows でも同じ hooks が動きます**（[ADR 0019](docs/adr/0019-windows-without-changing-linux.md)）。Claude Code の hooks はシェルを介さない exec 形式で `python` を直接起動するので Git Bash は任意です（PowerShell だけでも動きます）。ツール入力がバックスラッシュ区切りで届いても、他タスクの拒否・横断検索の拒否は同じように効きます（PowerShell ツールの `Get-ChildItem -Recurse` / `Select-String` / `Invoke-WebRequest` も止めます）。前提は 2 つ。`python` が PATH にあること、`.claude/skills` の symlink を作るために開発者モードを有効にして `git clone -c core.symlinks=true` すること（symlink が無いと Claude Code からスキルが見えません）。エージェントに `scripts/ws …` を叩かせる文面は Linux と共通なので、Windows では最初の 1 回だけ失敗して `python scripts/ws …` に読み替えます。
 - Codex CLI のプロジェクト hooks は、フォルダの信頼に加えて `/hooks` で hook ごとに trust しないと動きません。信頼は hook の定義のハッシュに対して記録されるので、`.codex/hooks.json` を書き換えたら trust し直してください（`scripts/ws` の中身を変えるだけなら不要です）。今回 user-prompt-submit に `--ttl 30` を足したので、更新後は `/hooks` で trust し直してください。
 
