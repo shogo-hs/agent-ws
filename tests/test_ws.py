@@ -205,8 +205,14 @@ class WsFlowTest(unittest.TestCase):
         def ev(name, sid, **kw):
             return json.dumps({"session_id": sid, "hook_event_name": name, **kw})
 
-        # セッション 1 が X で起動すると写しができる。その後セッション 2 が Y に切り替える
-        self.assertIn(x.name, self.ws("hook", "session-start", stdin=ev("SessionStart", s1, source="startup")).stdout)
+        # 起動したセッションは .ws/current（X）を引き継がず未設定で始まり、X を候補として見せる（ADR 0036）
+        out = self.ws("hook", "session-start", stdin=ev("SessionStart", s1, source="startup")).stdout
+        self.assertIn("未設定", out)
+        self.assertIn(f"task use projects/acme/tasks/{x.name}", out)
+        self.assertEqual(self.ws("task", "current", env=e1, check=False).returncode, 1)
+        # セッション 1 が X を選ぶと写しができる。その後セッション 2 が Y に切り替える
+        self.hook("Bash", {"command": f"scripts/ws task use projects/acme/tasks/{x.name}"}, sid=s1)
+        self.ws("task", "use", f"projects/acme/tasks/{x.name}", env=e1)
         self.assertEqual((self.root / ".ws/sessions" / f"{s1}.current").read_text(encoding="utf-8").strip(),
                          f"projects/acme/tasks/{x.name}")
         self.hook("Bash", {"command": f"scripts/ws task use projects/acme/tasks/{y.name}"}, sid=s2)
@@ -247,6 +253,40 @@ class WsFlowTest(unittest.TestCase):
         self.ws("task", "use", f"projects/acme/tasks/{y.name}", env=e2)
         self.assertEqual(self.ws("task", "current", env=e1, check=False).returncode, 1)
         self.assertEqual(self.hook("Read", {"file_path": str(y / "index.md")}, sid=s1), "deny")
+
+    def test_commit_takes_only_own_session_files(self):
+        """同じ clone の 2 セッション。commit と task done は、タスクのフォルダとそのセッションが書いたファイルだけを入れる（ADR 0036）。"""
+        git = lambda *a: subprocess.run(["git", "-C", str(self.root), *a], capture_output=True, text=True, check=True).stdout
+        git("init", "-q")
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+        self.env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        self.ws("project", "new", "acme")
+        e1, e2 = {"CLAUDE_CODE_SESSION_ID": "sess-1"}, {"CODEX_THREAD_ID": "sess-2"}
+        self.ws("task", "new", "acme", "a", env=e1)
+        self.ws("task", "new", "acme", "b", env=e2)
+        a, b = (next((self.root / "projects/acme/tasks").glob(f"*_{s}")) for s in ("a", "b"))
+        # セッション 1 は Edit でスキルを、lesson add で LESSONS.md を書く。セッション 2 は Codex の apply_patch で別のファイルを書く
+        skill = self.root / "skill.md"
+        self.hook("Write", {"file_path": str(skill), "content": "x"}, sid="sess-1")
+        skill.write_text("x", encoding="utf-8")
+        self.ws("lesson", "add", "教訓", env=e1)
+        self.hook("apply_patch", {"command": "*** Begin Patch\n*** Add File: other.md\n+y\n*** End Patch"}, sid="sess-2")
+        (self.root / "other.md").write_text("y", encoding="utf-8")
+        (b / "notes.md").write_text("書きかけ", encoding="utf-8")
+        out = self.ws("commit", "acme: a を進める", env=e1).stdout
+        files = set(git("show", "--name-only", "--format=", "HEAD").split())
+        self.assertIn("skill.md", files)
+        self.assertIn("LESSONS.md", files)
+        self.assertIn(f"projects/acme/tasks/{a.name}/index.md", files)
+        self.assertFalse(any(f.startswith(f"projects/acme/tasks/{b.name}") or f == "other.md" for f in files), files)
+        self.assertIn(f"projects/acme/tasks/{b.name}/notes.md", out)  # 残りは一覧に出る
+        # セッション 2 の task done は B と other.md をコミットし、完了のコミットにする
+        self.ws("task", "done", "--no-promote", "テスト", env=e2)
+        self.assertEqual(git("log", "-1", "--format=%s"), "acme: タスク b を完了にする\n")
+        files = set(git("show", "--name-only", "--format=", "HEAD").split())
+        self.assertIn("other.md", files)
+        self.assertIn(f"projects/acme/tasks/{b.name}/notes.md", files)
+        self.assertNotIn("skill.md", files)
 
     def test_gap_guard_blocks_first_prompt_after_cache_ttl(self):
         sid = "sess-1"

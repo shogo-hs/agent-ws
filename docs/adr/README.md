@@ -7,7 +7,7 @@
 |---|---|---|---|
 | [0001](0001-enforce-with-hooks.md) | 「他タスクを読まない」は hook で止める | 採用 | プロンプトの指示は助言。拒否の理由文で knowledges/ へ誘導する |
 | [0002](0002-one-task-one-session-and-cache-guard.md) | 1 タスク = 1 セッション。キャッシュ切れ後の 1 通目は止める | 採用 | TTL は 60 分（Claude サブスク）/ 30 分（Codex）/ 5 分（API キー） |
-| [0003](0003-session-scoped-current-task.md) | 「現在のタスク」はセッションごとに持つ | 採用 | `.ws/sessions/<session_id>.current`。同じ clone で並行できる |
+| [0003](0003-session-scoped-current-task.md) | 「現在のタスク」はセッションごとに持つ | 採用（起動時の引き継ぎは 0036 で置き換え） | `.ws/sessions/<session_id>.current`。同じ clone で並行できる |
 | [0004](0004-knowledges-single-source.md) | ナレッジの正本は knowledges/ だけ | 採用（横断の置き場は 0015 で置き換え） | 他タスクの tasks/ は拒否。新規タスクで他タスクへの立ち入り 0 回 |
 | [0005](0005-lessons-on-first-correction.md) | 指摘は 1 回目で LESSONS.md に残す | 採用 | 2 回目を待つ規則は機能しない。20 行超で減らす |
 | [0006](0006-reference-summary-and-original-pair.md) | reference は要点と原文の対 | 採用 | compact 後に中身ごと残るのは小さいファイルだけ |
@@ -40,6 +40,7 @@
 | [0032](0032-local-only-clone-and-template-update.md) | テンプレートを clone したまま使う運用（ローカル運用）を受け入れ、push を 3 段（宛先・pre-push・hook）で止める。更新の取り込みは `scripts/ws update` | 採用 | 古い版の clone に未コミットの作業 3 つを加えて `git pull --autostash` で最新に上げ、3 つとも残った。宛先だけだと URL の直書きで 1 行で回り込める |
 | [0033](0033-ask-for-promotion-on-task-done.md) | `task done` は knowledges が変わっていなければ止め、昇格するものが無いかを人に聞かせる（無ければ `--no-promote "<理由>"`）。status を直接 done にする編集は hook で拒否する | 採用 | 判定は knowledges 本文のハッシュ。mtime は clone・`ws update` で素通り側に壊れ、`updated` は止めすぎる側に壊れる |
 | [0034](0034-dont-take-user-suggestions-at-face-value.md) | 依頼の中の人の案は未検証の仮説として扱い、誤りなら手を動かす前に言う | 採用 | XYEval（arXiv 2609.23939）で誤った案 1 文で最大 −46.7%。測れた対策は一般的な警告の文だけで一部しか効かない。AGENTS.md に 4 行、lesson add の前の確認に 1 文。決めるのは人。効果は bench で未測定 |
+| [0036](0036-parallel-sessions-start-unset-and-commit-own-files.md) | 起動したセッションは未設定で始め、コミットはそのセッションが書いたファイルだけにする | 採用 | 同じ clone で並行するセッションのタスクと変更を混ぜない |
 
 ## 書き方
 
