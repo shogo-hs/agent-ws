@@ -1840,6 +1840,9 @@ def cmd_hook_pre_tool_use(args):
     if os.name == "nt":
         tool_input = _posix_input(tool_input)
     blob = json.dumps(tool_input, ensure_ascii=False)
+    if sid and tool in ("Bash", "PowerShell"):
+        SESSIONS.mkdir(parents=True, exist_ok=True)
+        _sess(sid, "bash_start").write_text(str(time.time()), encoding="utf-8")  # 実行後に post-tool-use が書いたファイルを拾う
     local_reason = _local_guard(tool, tool_input, blob, data.get("cwd") or "")
     if local_reason:
         _deny(local_reason)
@@ -1975,9 +1978,26 @@ def cmd_statusline(args):
     print(" | ".join(p for p in parts if p))
 
 
+def _record_bash_writes(sid: str):
+    """Bash の実行中に変わったファイル（git の変更一覧のうち、実行前の時刻より後に更新されたもの）を .touched に足す。
+    ponytail: 同じ時間に他のセッションが書いたファイルも拾う。分けるならファイルの書き込みの監視が要る。
+    Codex は PostToolUse を登録していないので記録されない（commit の残りの一覧に出る）"""
+    start = _sess(sid, "bash_start")
+    if not start.exists():
+        return
+    t0 = float(start.read_text(encoding="utf-8") or 0)
+    for e in _git("status", "--porcelain", "-z", "--no-renames", "--untracked-files=all").stdout.split("\0"):
+        f = ROOT / e[3:]
+        if e and f.is_file() and f.stat().st_mtime >= t0:
+            _touch(f, sid)
+
+
 def cmd_hook_post_tool_use(args):
     """WebSearch の結果 URL を文脈に足す。読むなら ref add へ誘導する（WebFetch は pre-tool-use が止める）。"""
     data = _stdin_json()
+    if data.get("tool_name") in ("Bash", "PowerShell") and data.get("session_id"):
+        _record_bash_writes(data["session_id"])
+        return
     if data.get("tool_name") != "WebSearch" or not current_task(data.get("session_id")):
         return
     urls: list[str] = []
